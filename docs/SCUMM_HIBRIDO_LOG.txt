@@ -1,0 +1,236 @@
+SCUMM PET C64 / LVLLVL ENGINE
+LOG CONSOLIDADO DE HITOS Y DECISIONES
+ACTUALIZADO: 08/10/2026
+ULTIMO PASS CONFIRMADO: TEST_BANK16F_POSTINTRO_CPU_FILL_8D00_8FFF.zip
+======================================================================
+
+REGLA DEL PROYECTO
+------------------
+- main debe representar solamente un estado PASS.
+- Cada prueba debe cambiar una sola variable cuando sea posible.
+- No promover una prueba por funcionar solo al inicio.
+- La validacion minima recorre el pipeline completo vigente.
+- Mantener este LOG como historial consolidado.
+- Mantener SCUMM_HIBRIDO_MAPA_MILESTONES.txt como contrato vivo de arquitectura.
+- Evitar TXT individuales por test; integrar los resultados importantes aqui.
+
+SECUENCIA OBJETIVO FUTURA
+-------------------------
+INTRO CARGA
+  4 frames LEMMINGS
+        |
+        v
+CARGA 1
+  ANIMACION 1
+  + SID 1
+  + SID 2
+  + PORTADA con grafico A
+        |
+        v
+ANIMACION 1
+        |
+        v
+PORTADA visible
+  mientras la PORTADA permanece en pantalla:
+  - reciclar banco de ANIMACION anterior
+  - cargar ANIMACION 2
+  - cargar SID siguiente
+  - cargar nuevo recurso grafico para el mismo engine de PORTADA
+        |
+        v
+ANIMACION 2
+        |
+        v
+PORTADA reutilizada con grafico B
+        |
+        v
+CARGA 3 / repetir cadena
+
+CONCEPTO CENTRAL
+----------------
+No conservar simultaneamente animaciones ya consumidas.
+Debe existir un unico ANIMATION BANK reutilizable.
+Debe existir un unico sistema/slot de PORTADA reutilizable con recursos graficos
+distintos. No se planifican PORTADA A/B/C como motores o bancos residentes separados.
+
+ARQUITECTURA BASE VALIDADA
+--------------------------
+- Descriptor V3 / Resource Directory / LoadResource(ID): PASS.
+- load_list_ptr + executor_ptr: PASS.
+- resolver / dispatcher genericos: PASS.
+- MASTER IRQ raster $FA: PASS.
+- hotload phase-aligned raster $20: PASS.
+- AUDIO SLOT A: $1000-$27FF.
+- AUDIO SLOT B: $B800-$CFFF.
+- handoff AUDIO A -> B: PASS.
+- scheduler con timing por Frame: PASS.
+- tabla timing por Frame: $4087-$40A6.
+- indice Frame actual: $4046.
+- fallback timing: $4077.
+- ticks Frame visible: $43A5.
+- selector timing: $4067.
+- PrepareFreshAnimationVisual(): PASS.
+- PORTADA A aprobada: pausa estatica + scroll + fade.
+- Sprite Engine aprobado.
+- loop infinito HALITO 2 aprobado.
+- timing runtime controlado POR FRAME.
+
+ENGINE V2E / LVLLVL
+-------------------
+Contrato visual validado:
+1. scheduler copia front -> back;
+2. delta de screen se define contra Frame N-1;
+3. BITMAP_DELTA fast path: bitmap byte $00 = skip 8 celdas;
+4. terminar screen oculto;
+5. screen swap;
+6. actualizar Color RAM;
+7. no usar N-2;
+8. no apagar DEN para ocultar transicion.
+
+Color HALITO:
+- $02 -> $0C aprobado.
+- $01 es blanco valido y se preserva.
+- La normalizacion es perfil del recurso, no regla universal.
+
+Tool:
+- LVLLVL_SCUMM_WEB_TOOL_V0_40 exporta perfil ANIMATION_16F_V2E.
+- export navegador real -> engine V2E: PASS.
+- framepack / charset / metadata validados byte a byte.
+
+RESOURCE02 / HALITO CLON
+------------------------
+TEST_HALITO1_CLONE_RESOURCE02_13.zip = PASS.
+Demostro que Resource02 puede ejecutar un segundo ANIMATION_16F si el payload
+respeta el contrato fisico/formato del motor.
+
+TEST_UNIVERSAL_ANIM16_LAYOUT_HALITO_CLONE_14A.zip = FAIL.
+No usar como base.
+
+OPTIMIZACION 15 / EXTENSION RESOURCE02
+--------------------------------------
+OPT-15A = PASS
+- eliminado KrillLoad de la antigua precarga de Portada B durante Resource02.
+- $9000-$A1FF queda disponible durante Resource02.
+
+OPT-15B = PASS
+- bloque inerte $8D00-$A1FF durante Resource02.
+- valida ocupacion fisica de la extension.
+
+OPT-15C = PASS
+- Frame 14 real de HALITO 2, 832 bytes.
+- duplicado en $9E00-$A13F.
+- puntero cambiado de $8100 a $9E00.
+- flujo completo PASS.
+
+OPT-15D = PASS
+- dos Frames reales consecutivos dentro de la extension.
+- F14: $9E00-$A13F.
+- F15: $9900-$9DFF.
+- F14 -> F15 -> F16 funciona correctamente.
+- SID / scheduler / ticks / PORTADA / fade intactos.
+
+CONCLUSION OPT-15:
+Resource02 puede usar activamente memoria por encima del banco historico.
+La extension no es solo espacio inerte; puede contener Frames ejecutables.
+
+BANK16 / LIMPIEZA PARA BANCO UNICO
+----------------------------------
+Objetivo:
+dejar de buscar huecos por Resource y construir un banco reutilizable para cualquier
+ANIMACION, recargado durante las pantallas de PORTADA.
+
+BANK16A = PASS
+- backup temporal charset Resource01 movido de $9000-$97FF a $E800-$EFFF.
+- INTRO LEMMINGS, Resource01, PORTADA, Resource02, SID, scheduler y fade siguen PASS.
+- $9000-$97FF queda liberado durante CARGA 1.
+
+BANK16B = FAIL
+- KrillLoad extra intentando cargar probe $8D00-$9FFF durante INTRO.
+- queda detenido con luz del drive encendida.
+
+BANK16C = FAIL
+- mismo concepto, solo $8D00-$8FFF.
+- tambien queda detenido con luz del drive encendida.
+- se descarta que el fallo se deba solamente a cruzar $9000.
+
+BANK16D = FAIL
+- probe $8D00-$9FFF movido despues de StopIntroA().
+- CPU JAM.
+- no promover.
+
+BANK16E = FAIL
+- probe reducido $8D00-$8FFF despues de StopIntroA().
+- CPU JAM / cuelgue.
+- patron comun de B/C/D/E: agregado de un KrillLoad adicional.
+
+BANK16F = PASS / ULTIMO PASS CONFIRMADO
+- base BANK16A.
+- SIN nuevo KrillLoad.
+- SIN nueva entrada D64.
+- despues de StopIntroA(), la CPU llena directamente $8D00-$8FFF.
+- pipeline completo sigue funcionando.
+
+CONCLUSION BANK16F
+------------------
+$8D00-$8FFF ES RAM reutilizable despues de la INTRO.
+Los FAIL de B/C/D/E no prueban que el rango sea invalido.
+La evidencia apunta al KrillLoad extra / secuencia de I/O en esa fase.
+
+BANK16G = PENDIENTE
+-------------------
+Prueba preparada:
+- base BANK16F PASS.
+- sin KrillLoad extra.
+- CPU llena directamente todo $8D00-$9FFF despues de StopIntroA().
+- objetivo: determinar si todo el tramo es RAM reutilizable.
+
+NO PROMOVER BANK16G hasta PASS explicito.
+
+CANDIDATO DE BANCO UNIVERSAL
+----------------------------
+NO ES TODAVIA CONTRATO FINAL.
+
+Candidato:
+- ANIMATION BANK: $4400-$9FFF = 23.552 bytes.
+- CHARSET STAGE / backup: $E800-$EFFF = 2.048 bytes.
+
+Para promoverlo deben cumplirse:
+1. BANK16G PASS.
+2. Integrar la extension dentro de la carga/loadlist existente.
+3. Evitar KrillLoad adicional si esa es la causa confirmada.
+4. Probar primero HALITO -> HALITO.
+5. Solo despues reintroducir ESCHER.
+
+ESCHER
+------
+Los intentos antiguos mostraron que adaptar el motor directamente a ESCHER mezcla
+demasiadas variables.
+
+Lecciones:
+- no crecer codigo dentro de zonas criticas del decoder/gateways;
+- preload futuro debe ser pasivo: no modificar metadata viva de la escena actual;
+- Sprite Engine usa $3F00-$3FFF;
+- charset $3800-$3FFF comparte esa pagina;
+- glyph IDs $E0-$FF pueden entrar en conflicto con sprites activos;
+- resolver incompatibilidades mediante Tool/perfil/packer, no parches por nombre.
+
+ESTRATEGIA PARA ESCHER
+----------------------
+1. Terminar contrato del banco unico.
+2. Validarlo con HALITO -> HALITO.
+3. Hacer que ESCHER cumpla el contrato del motor.
+4. No cambiar scheduler, SID, fade o timing para acomodar el arte.
+5. Probar pipeline completo.
+
+ULTIMO MASTER PASS PARA GIT
+---------------------------
+TEST_BANK16F_POSTINTRO_CPU_FILL_8D00_8FFF.zip
+
+PENDIENTE INMEDIATO
+-------------------
+BANK16G:
+CPU fill $8D00-$9FFF post-INTRO, sin KrillLoad extra.
+
+======================================================================
+FIN DEL LOG ACTUAL
+======================================================================
