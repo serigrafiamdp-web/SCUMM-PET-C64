@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - "releases/BANK16F/TEST_BANK16F_POSTINTRO_CPU_FILL_8D00_8FFF.zip"
+      - "releases/BANK16F/SHA256SUMS.txt"
   workflow_dispatch:
 
 permissions:
