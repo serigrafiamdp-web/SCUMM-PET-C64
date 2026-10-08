@@ -93,8 +93,14 @@ $01 preservado como blanco valido.
 
 7. TOOL LVLLVL
 --------------
-Tool vigente de referencia:
+TOOL NORMALIZADORA OFICIAL EN GITHUB:
+tools/lvllvl-normalizer/index.html
+
+Version vigente:
 LVLLVL_SCUMM_WEB_TOOL_V0_40.html
+
+Copia congelada:
+tools/lvllvl-normalizer/versions/LVLLVL_SCUMM_WEB_TOOL_V0_40.html
 
 Perfil:
 ANIMATION_16F_V2E
