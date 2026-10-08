@@ -1,0 +1,1898 @@
+program scumm_hibrido_engine;
+
+var
+    @use KrillsLoader $0200 $9000 $a000
+
+    // AUDIO SLOT A / active player window.
+    // TEST FADE-02: active SID player D418 write is routed through resident hook $40F9.
+    sid_player      : incbin("assets/sid_player.bin", $1000);
+    // AUDIO SLOT A is protected at $1000-$27FF (6 KB).
+    // Resource metadata is resident in the $3400-$37FF region.
+    // frame_engine remains only in its relocated copy at $4272.
+    frame_engine_reloc : incbin("assets/frame_engine_reloc.bin", $4272);
+    charset         : incbin("assets/portada_a_charset.bin", $3800);
+    scheduler_helper_reloc: incbin("assets/scheduler_helper_reloc.bin", $410a);
+    sid_load_irq     : incbin("assets/sid_load_irq_scrollfirst.bin", $40a8);
+    // Shared D418 volume hook: preserves filter bits and applies current_volume.
+    sid_d418_hook   : incbin("assets/sid_d418_hook.bin", $40f9);
+    // MASTER IRQ extension: scroll lane + one-shot Frame 02 audio event trigger.
+    // $4046 frame index: 0=Frame 01, 1=Frame 02. $43FE=audio event arm; $43FF=visual state.
+    sid_scroll_irq_extension : incbin("assets/sid_scroll_irq_pingpong_reverse.bin", $43c0);
+    // $3708 frame_count, $3709 ticks, $370A ID, $370B/$370C entry.
+    // $370D/$370E = charset source. Resource02 player consumes it.
+    // Player remains exactly $7000-$70FF; patch-offset table is resident at $37B8.
+    // Resident stride helper lives at $37C0.
+    // Resident layout helper remains at $37C0.
+    // Operand offsets $37C0; layout helper $37C8.
+    // $3716/$3717 = selected loader entry pointer.
+    // Legacy descriptor block now keeps only Resource01/02; terminator at $3418.
+    // PODA 07V: $3419-$3424 queda libre/reutilizable; Resource03 legacy descriptor retirado.
+    mm_resource_descriptors_base : incbin("assets/mm_resource_descriptors_3.bin", $3400);
+    // Format: [count][item IDs...][00 sentinel]. $3425-$342A.
+    // PODA 08A: $342B-$342E queda libre/reutilizable; padding runtime Resource01 retirado.
+    // Runtime state uses $342F=list index and $3430=items remaining.
+    mm_loadlist_resource01_runtime : incbin("assets/mm_loadlist_resource01_runtime.bin", $3425);
+    // Format [count][IDs...][00], $3440-$3445. PODA 08C: $3446-$3453 libre/reutilizable; $3454 = validator profile.
+    mm_loadlist_resource02_runtime : incbin("assets/mm_loadlist_resource02_runtime.bin", $3440);
+    // PODA 16: $3457-$345C queda libre/reutilizable.
+    // La load-list runtime del antiguo Resource 03 ya no puede ser seleccionada.
+    // $345D = Resource01 loops, $345E = Resource02 loops; PODA 07W: $345F libre/reutilizable.
+    mm_loop_counts : incbin("assets/mm_loop_counts.bin", $345d);
+
+    // Active descriptors: Resource 01 at $3470 and Resource 02 at $3480.
+    // PODA 13 + 07Z: $3490-$34A0 is free/reusable; Resource 03 descriptor and unused V3 terminator removed.
+    mm_resource_descriptors_v3 : incbin("assets/mm_resource_descriptors_v3_exec.bin", $3470);
+    // Format: [count][resource_id, descriptor_lo, descriptor_hi] x count.
+    // count=$02; $01->$3470, $02->$3480. $34A8-$34AD freed by trimming removed 03/04 entries.
+    mm_resource_directory : incbin("assets/mm_resource_directory_counted_4.bin", $34a1);
+    // PODA 14 + 07J: $34A8-$34BD queda libre/reutilizable.
+    // Resource 04 ya no pertenece al directorio activo.
+    // SID A private ZP state: $34BE-$34CD; engine ZP shadow: $34CE-$34DD.
+    sid_a_zp_banks : incbin("assets/porro_zp_banks.bin", $34be);
+    // SID A INIT wrapper captures its initial $F0-$FF state after INIT.
+    sid_a_init_capture_zp : incbin("assets/porro_init_capture_zp.bin", $34de);
+    // PODA 07Z: active Descriptor V3 block occupies $3470-$348F; $3490 queda libre/reutilizable.
+    // Counted directory remains fixed at $34A1.
+    // PODA 08D: copia source legacy de Resource01 retirada; $34F4-$34FD libre/reutilizable.
+    // V2A ENGINE TEST: $3608-$3646 = generic screen-type dispatcher + BITMAP_DELTA part 1.
+    // $3650-$3653 remains the existing dynamic reader. $3654-$3688 = BITMAP_DELTA fast decoder.
+    // V2C: bitmap byte $00 advances 8 screen cells in one step; mixed bytes keep the exact V2A bit decoder.
+    // The frame itself selects codec by header byte 0: type $04 -> V2 BITMAP_DELTA; other types -> legacy engine.
+    mm_directory_trampoline_helpers : incbin("assets/mm_directory_trampoline_helpers.bin", $3600);
+    v2_bitmap_dispatch_part1 : incbin("assets/v2_bitmap_dispatch_part1.bin", $3608);
+    mm_directory_dynamic_reader : incbin("assets/mm_directory_dynamic_reader.bin", $3650);
+    v2_bitmap_dispatch_part2 : incbin("assets/v2_bitmap_dispatch_part2.bin", $3654);
+    // $3676-$369F remains free/reusable.
+    // RESOURCE 03 source load-list removed; $3680 area is free/reusable.
+    // and scans 3-byte entries from $34A2. Adding Resource $04 only requires increasing count
+    // and appending one [id,descriptor_lo,descriptor_hi] entry; resolver logic remains unchanged.
+    // Output remains: patch $3650 reader from descriptor +12/+13 and executor_ptr to $371A/$371B.
+    mm_counted_directory_resolver : incbin("assets/mm_counted_directory_resolver.bin", $36a0);
+    // PODA 07L: $36F0-$36F4 queda libre/reutilizable; stubs legacy de Resource04 retirados.
+    // $36F5 Resource01, $36F8 Resource02. $36FB-$36FD free/reusable; JMP operands are resolved once at boot.
+    mm_executor_gateways : incbin("assets/mm_executor_gateways.bin", $36f5);
+    // $3726 helper NextResource, $3737 script 01,02,00, $373A cursor; $373B-$373C libres/reutilizables.
+    mm_resource_script : incbin("assets/mm_resource_script.bin", $3726);
+    mm_resource_dispatcher : incbin("assets/mm_resource_dispatcher_4resources.bin", $3740);
+    // V2A ENGINE TEST: Frame 16 -> Frame 01 loop block at $2900 also uses screen_type $04 BITMAP_DELTA.
+    // Color keeps the legacy sparse-color path for this first isolated decoder test.
+    loop_16_to_01_resident : incbin("assets/loop_32_to_01.bin", $2900);
+
+    // Raw BIN avoids ambiguity about TRSE procedure entry addresses.
+    mm_resource02_exit_handler : incbin("assets/mm_resource02_exit_handler.bin", $2c00);
+    // $3462: bit7=reverse active, low bits=reverse fine-X 0..7.
+    // Raw helper at $2C30 mirrors the approved forward double-buffer mechanism.
+    mm_scroll_reverse_continuous : incbin("assets/mm_scroll_reverse_continuous.bin", $2c30);
+    // SPR-ENGINE-02C: resident IRQ sprite trampoline/tick in former PODA 18 gap.
+    sprite_irq_tick : incbin("assets/sprite_irq_tick.bin", $2ce0);
+    // $2D83-$2D93 remains free/reusable.
+    mm_window38_vic : incbin("assets/mm_window38_vic.bin", $2da0);
+    mm_portada_b_install : incbin("assets/mm_portada_b_new_install.bin", $2e00);
+    // SLOT 1 SID A native-CIA test helper; free gap $2E89-$2EFF.
+    sid_a_dual_irq_helper : incbin("assets/porro_slot1_dual_irq.bin", $2e89);
+    // MOTOR: generic final-loop per-Frame timing override.
+    // $2F28 enable, $2F29 owner Resource ID, $2F30-$2F4F override[32]; 0 = timing normal.
+    // Se aplica dentro del MISMO scheduler sólo cuando $40A7 == 1 (ultimo loop).
+    scheduler_final_loop_timing_override : incbin("assets/scheduler_final_loop_timing_override.bin", $2f00);
+    // MASTER 03/10/2026: RESOURCE 02 / SID 2 approved cadence profile.
+    // Base musical grid was 06,06,06,07 x4. This test uses 24,24,24,28 per group.
+    // Candidate table: 24,24,24,28 repeated x4 = 400 PAL ticks per 16-Frame loop.
+    // Uses the same isolated profile slot $2F50-$2F5F.
+    resource02_sid2_cadence : incbin("assets/resource02_sid2_cadence_16frames.bin", $2f50);
+    // SPR-ENGINE-13: RESOURCE 02 fast cadence enabled exactly when sprite movement starts.
+    // $2F60-$2F6F = [12,14,12,14] x4.
+    resource02_sid2_fast_cadence : incbin("assets/resource02_sid2_fast_cadence_16frames.bin", $2f60);
+    // PODA 09 restante: $2F70-$2F88 sigue libre/reutilizable.
+    scheduler32_compact : incbin("assets/scheduler32_compact_loop2900.bin", $4000);
+    // PODA 01: $A000-$B7FF is intentionally FREE / reusable.
+    // SID A already executes from the common EXEC window $1000-$27FF.
+    // The old 6 KB static duplicate BANK A was never read by the runtime.
+    // $F000-$F8DE is reserved for resident PORTADA 01 after initial disk load.
+
+
+
+
+// SPR-ENGINE-02C LAB. $A300 core only INIT/SHOW and returns immediately.
+// Animation tick is resident at $2CE0 and runs from the permanent IRQ, including during LoadResource.
+// Entry $A300 = init/show. Hide/restore entry = $A3B0.
+
+// PORTADA timing gate. Keep this outside the low compiled block so AUDIO SLOT A
+// at $1000 remains protected. TEST HOLD-01: PORTADA is shown completely static
+// for 70 full MASTER IRQ ticks while SID PLAY remains alive. Then SCROLL is enabled
+// and is allowed to run for 1408 further MASTER IRQ ticks before the next resource load.
+@startblock $2dc5 "PORTADA_SCROLL_LOAD_DELAY"
+procedure WaitPortadaScrollLoadDelay();
+begin
+    asm("
+                        ; TEST SCROLL-07: 70 complete MASTER IRQ ticks with PORTADA visible and scroll OFF.
+        ldx #$46
+portada_wait_static_tick_fa:
+        lda $d012
+        cmp #$fa
+        bne portada_wait_static_tick_fa
+
+portada_wait_static_tick_leave_fa:
+        lda $d012
+        cmp #$fa
+        beq portada_wait_static_tick_leave_fa
+
+        dex
+        bne portada_wait_static_tick_fa
+
+                        ; SCROLL-ALT-03E: init direction counter inside Sprite Core.
+        ; Main timing remains the approved 1408-tick wait from SPR-ENGINE-02D.
+        jsr $a400
+    ");
+    // SCROLL-ALT-03E: sprite starts with scroll; direction changes are counted by actual scroll calls.
+    // Keep the original SCROLL-11 window intact: full 1408 ticks remain in MAIN
+    // before the resource request starts.
+    asm("
+        jsr $a300
+
+        ; Preserve the approved PORTADA A clean-scroll delay.
+        ; 1408 = 128 + (5 x 256).
+        ldy #$06
+        ldx #$80
+portada_wait_clean_tick_fa_sprite:
+        lda $d012
+        cmp #$fa
+        bne portada_wait_clean_tick_fa_sprite
+
+portada_wait_clean_tick_leave_fa_sprite:
+        lda $d012
+        cmp #$fa
+        beq portada_wait_clean_tick_leave_fa_sprite
+
+        dex
+        bne portada_wait_clean_tick_fa_sprite
+        dey
+        beq portada_wait_clean_done_fa_sprite
+        ldx #$00
+        jmp portada_wait_clean_tick_fa_sprite
+portada_wait_clean_done_fa_sprite:
+    ");
+end;
+@endblock
+
+procedure InitVideo();
+begin
+    asm("
+        sei
+        lda #$00
+        sta $d020
+        lda $d011
+        and #$bf
+        sta $d011
+        lda $d016
+        and #$ef
+        sta $d016
+        lda #$1e
+        sta $d018
+    ");
+end;
+
+procedure DiskBegin();
+begin
+    asm("
+        sei
+    ");
+end;
+
+
+// The permanent MASTER IRQ runs at raster $FA. Krill's short entry/preamble
+// happens before the drive LED becomes visible. Start that preamble far from
+// $FA so a timing-sensitive player cannot lose its next PLAY tick.
+// IRQs remain enabled while waiting: SID + PORTADA scroll stay alive.
+// Align hotload entry to raster $20 while IRQs remain enabled, keeping audio/scroll continuous.
+@startblock $2890 "SID_LOADER_PHASE_GATE"
+procedure StartSidLoadIRQ();
+begin
+    asm("
+sid_loader_phase_wait_20:
+        lda $d012
+        cmp #$20
+        bne sid_loader_phase_wait_20
+
+        ; Enter the exact approved loader memory configuration.
+        lda #$35
+        sta $01
+    ");
+end;
+
+// Rebuild the permanent PAL audio/visual IRQ after an incoming SID INIT.
+// This follows the LVLLVL-proven order: INIT first, then restore CIA/VIC/vector,
+// and let the first PLAY occur naturally on the next raster IRQ.
+procedure RearmMasterIRQAfterSidInit();
+begin
+    asm("
+        lda #$35
+        sta $01
+
+        lda #$a8
+        sta $fffe
+        lda #$40
+        sta $ffff
+
+        lda #$7f
+        sta $dc0d
+        sta $dd0d
+        lda $dc0d
+        lda $dd0d
+
+        lda $d011
+        and #$7f
+        sta $d011
+        lda #$fa
+        sta $d012
+
+        lda #$01
+        sta $d019
+        sta $d01a
+        cli
+    ");
+end;
+@endblock
+
+procedure StopSidLoadIRQ();
+begin
+    asm("
+        ; No handoff. Permanent PAL SID IRQ stays active.
+        lda #$35
+        sta $01
+    ");
+end;
+
+
+// $2800-$28FF: generic BANK B -> EXEC activation.
+// BANK B is a fixed 6 KB logical bank at $B800-$CFFF.
+// The active execution window is always $1000-$27FF.
+// This handoff is no longer resource-specific.
+@startblock $2800 "SID_SWITCH_A_TO_B"
+procedure SwitchToAudioSlotB();
+begin
+    asm("
+        ; Stop both visual and CIA IRQ ownership during the atomic bank switch.
+        sei
+        lda #$00
+        sta $d01a
+        lda #$7f
+        sta $dc0d
+        sta $dd0d
+        lda $dc0d
+        lda $dd0d
+
+        ; Preserve the engine's complete $F0-$FF workspace before using it.
+        ldx #$00
+sid_b_save_engine_zp:
+        lda $f0,x
+        sta $34ce,x
+        inx
+        cpx #$10
+        bne sid_b_save_engine_zp
+
+        ; Generic fixed-bank copy:
+        ; BANK B $B800-$CFFF -> EXEC $1000-$27FF (24 full pages = 6144 bytes).
+        lda #$00
+        sta $f0
+        sta $f2
+        lda #$b8
+        sta $f1
+        lda #$10
+        sta $f3
+        ldx #$18
+sid_b_copy_page:
+        ldy #$00
+sid_b_copy_byte:
+        lda ($f0),y
+        sta ($f2),y
+        iny
+        bne sid_b_copy_byte
+        inc $f1
+        inc $f3
+        dex
+        bne sid_b_copy_page
+
+        ; Clear the physical SID before the incoming native INIT.
+        lda #$00
+        ldx #$18
+sid_b_clear_d400:
+        sta $d400,x
+        dex
+        bpl sid_b_clear_d400
+
+        ; Generic ABI used by SID A and SID B:
+        ; INIT=$1000, PLAY=$1003, subtune A=0.
+        ; Existing helper performs INIT and captures resulting $F0-$FF
+        ; into the persistent SID private bank $34BE-$34CD.
+        lda #$00
+        jsr $34de
+
+        ; INIT leaves SID-private values live in $F0-$FF.
+        ; Restore the engine workspace; CIA PLAY wrapper will swap banks per PLAY.
+        ldx #$00
+sid_b_restore_engine_zp:
+        lda $34ce,x
+        sta $f0,x
+        inx
+        cpx #$10
+        bne sid_b_restore_engine_zp
+
+        ; Reset the native-CIA start gate used by the proven combined handler.
+        lda #$00
+        sta $43af
+
+        ; Reinstall the same generic combined CIA/VIC IRQ used by SLOT 1.
+        lda #$89
+        sta $fffe
+        lda #$2e
+        sta $ffff
+
+        ; Keep CIA IRQ sources masked until the first raster IRQ.
+        ; The combined handler then enables/starts Timer A using the
+        ; latch programmed by SID B INIT.
+        lda #$7f
+        sta $dc0d
+        sta $dd0d
+        lda $dc0d
+        lda $dd0d
+
+        lda $d011
+        and #$7f
+        sta $d011
+        lda #$fa
+        sta $d012
+
+        ; OPT-15D: Resource01 already finished. Keep the proven Frame 14 relocation
+        ; at $9E00 and relocate the immediately following Resource02 Frame 15
+        ; from $8700 to $9900. Both entries are patched atomically while IRQs
+        ; remain disabled; every other Frame address and the F16->F1 loop stay unchanged.
+        lda #$9e
+        sta $4053
+        lda #$99
+        sta $4054
+
+        lda #$01
+        sta $d019
+        sta $d01a
+        cli
+    ");
+end;
+@endblock
+
+
+// Generic AUDIO LANE fade timeline command.
+//
+// IMPORTANT MEMORY RULE:
+// Keep the complete command OUTSIDE the low compiled block.
+// Fade command remains resident outside the low block so the SID origin at $1000 stays protected.
+//
+// The permanent IRQ at $40A8 already owns the generic ramp state:
+//   $43A7 = current volume 0..15
+//   $43A8 = target volume  0..15
+//   $43A9 = tick divider / counter
+//   $43AA = ticks per 1-volume step
+//   $43AB = D418 shadow used by the player hook
+//
+// Free resident tail:
+// loop_32_to_01 occupies $2900-$2BC5, therefore $2BC6-$2BFF is free.
+//
+//   START delay = 16 PAL ticks (~0.32 s)
+//   AUDIO SLOT A 15 -> 0 at 16 PAL ticks per level (~4.80 s)
+//   total ~= 5.12 s to silence
+//   then A->B handoff; AUDIO SLOT B starts at the configured initial volume.
+// FadeTo LANE 0 command. Current working Fade Out preset: CORTA (delay=16, rate=16, target=0).
+@startblock $2bc6 "SID_FADE_TIMELINE_COMMAND"
+procedure FadeTimelineLane0Short();
+begin
+    asm("
+        ; START / DELAY = 16 PAL ticks.
+        ; IRQs remain enabled: SID PLAY + visual scroll continue.
+        lda #$10
+        sta $43ac
+
+fade_timeline_delay_wait_fa:
+        lda $d012
+        cmp #$fa
+        bne fade_timeline_delay_wait_fa
+
+fade_timeline_delay_leave_fa:
+        lda $d012
+        cmp #$fa
+        beq fade_timeline_delay_leave_fa
+
+        dec $43ac
+        bne fade_timeline_delay_wait_fa
+
+        ; TARGET = 0, RATE = 16 PAL ticks per volume step.
+        lda #$00
+        sta $43a8
+        sta $43a9
+        lda #$10
+        sta $43aa
+
+fade_timeline_wait_target:
+        lda $43a7
+        bne fade_timeline_wait_target
+    ");
+end;
+@endblock
+
+
+// Fresh animation helper moved to $3500-$35CF so AUDIO SLOT A remains fully protected.
+@startblock $3500 "ANIMATION_PREP"
+procedure PrepareFreshAnimationVisual();
+begin
+    asm("
+        ; Atomic visual handoff:
+        ; keep the VIC display blank while Frame 01 screen/color is rebuilt.
+        ; Audio/MASTER IRQ stays alive.
+        lda $d011
+        and #$ef
+        sta $d011
+
+        lda $4400
+        cmp #$01
+        bne habc_prep_fail_near
+        lda $4401
+        cmp #$01
+        bne habc_prep_fail_near
+        lda $4402
+        cmp #$20
+        bne habc_prep_fail_near
+        jmp habc_prep_checks_ok
+
+habc_prep_fail_near:
+        jmp habc_prep_fail
+
+habc_prep_checks_ok:
+        ldx #$00
+habc_copy_screen_pages:
+        lda $440c,x
+        sta $0400,x
+        lda $450c,x
+        sta $0500,x
+        lda $460c,x
+        sta $0600,x
+        inx
+        bne habc_copy_screen_pages
+
+        ldx #$00
+habc_copy_screen_tail:
+        lda $470c,x
+        sta $0700,x
+        inx
+        cpx #$e8
+        bne habc_copy_screen_tail
+
+        lda #$f4
+        sta $fb
+        lda #$47
+        sta $fc
+        lda #$00
+        sta $fd
+        lda #$d8
+        sta $fe
+        lda #$f4
+        sta $f7
+        lda #$01
+        sta $f8
+habc_color_loop:
+        ldy #$00
+        lda ($fb),y
+        tax
+        and #$0f
+        sta ($fd),y
+        inc $fd
+        bne habc_c1
+        inc $fe
+habc_c1:
+        txa
+        lsr
+        lsr
+        lsr
+        lsr
+        ldy #$00
+        sta ($fd),y
+        inc $fd
+        bne habc_c2
+        inc $fe
+habc_c2:
+        inc $fb
+        bne habc_cs
+        inc $fc
+habc_cs:
+        sec
+        lda $f7
+        sbc #$01
+        sta $f7
+        lda $f8
+        sbc #$00
+        sta $f8
+        ora $f7
+        bne habc_color_loop
+
+        lda #$00
+        sta $d020
+        lda $4404
+        sta $d021
+        lda $4405
+        sta $d022
+        lda $4406
+        sta $d023
+        lda $4407
+        sta $d024
+
+        ; Fresh visual runtime state, but NEVER touch SID/IRQ state here.
+        lda #$00
+        sta $4399
+        sta $43ff
+        lda #$20
+        sta $43a5
+        jsr $2dac
+        lda #$1e
+        sta $d018
+        lda #$fa
+        sta $d012
+
+        ; Re-enable only before the next visible frame begins.
+        ; This prevents the partial Frame 01 / 38-column states from becoming visible.
+habc_wait_safe_raster:
+        lda $d012
+        cmp #$20
+        bne habc_wait_safe_raster
+        lda $d011
+        ora #$10
+        sta $d011
+        jmp habc_prep_done
+
+habc_prep_fail:
+        sei
+        lda #$02
+        sta $d020
+habc_prep_hold:
+        jmp habc_prep_hold
+
+habc_prep_done:
+    ");
+end;
+@endblock
+
+
+procedure InitResourceVectors();
+begin
+    // $3718/$3719 = shared generic loader-entry pointer.
+    // $3720-$3723 = [executor_lo, executor_hi] x 2; $3724-$3725 free/reusable.
+    // One loop installs BOTH the physical loader vector and the executor gateway
+    // for each resource slot. No per-ID branches, no separate loader/executor phases.
+    asm("
+        ; Resolve the shared generic loader entry once.
+        lda #<mm_loader_entry
+        sta $3718
+        lda #>mm_loader_entry
+        sta $3719
+
+        ; Compact executor target table: [lo,hi] x 3.
+        lda #<mm_resource01_executor
+        sta $3720
+        lda #>mm_resource01_executor
+        sta $3721
+        lda #<mm_resource02_executor
+        sta $3722
+        lda #>mm_resource02_executor
+        sta $3723
+        ; X walks executor table by 2 bytes; Y walks destination slots by 3 bytes.
+        ldx #$00
+        ldy #$00
+mm_resource_vector_install:
+        ; shared loader-entry vector -> physical loader table
+        lda $3718
+        sta $37ec,y
+        lda $3719
+        sta $37ed,y
+
+        ; resource-specific executor target -> fixed gateway JMP operand
+        lda $3720,x
+        sta $36f6,y
+        inx
+        lda $3720,x
+        sta $36f7,y
+        inx
+
+        tya
+        clc
+        adc #$03
+        tay
+        cpx #$04
+        bne mm_resource_vector_install
+
+        ; PODA 07Q: dispatcher asset ends at Resource03 terminator $37F1.
+        ; $37F2-$37F6 are now free/reusable.
+    ");
+end;
+
+
+procedure LoadResource();
+begin
+    // INPUT: $3714 = requested Resource ID.
+    // The vector table and Descriptor V3 executor_ptr fields are already
+    // initialized once by InitResourceVectors() during boot.
+
+    asm("
+        ; Generic table lookup only:
+        ; [resource_id, loader_entry_lo, loader_entry_hi]
+        ldx #$00
+
+mm_lr_table_scan:
+        lda $37eb,x
+        beq mm_lr_bad_id
+        cmp $3714
+        beq mm_lr_table_found
+
+        txa
+        clc
+        adc #$03
+        tax
+        jmp mm_lr_table_scan
+
+mm_lr_table_found:
+        lda $37ec,x
+        sta $3716
+        lda $37ed,x
+        sta $3717
+
+        ; No ID decision tree and no profile decision tree.
+        ; Execute exactly the loader entry supplied by the table.
+        jmp ($3716)
+
+mm_lr_bad_id:
+        lda #$02
+        sta $d020
+mm_lr_bad_id_hold:
+        jmp mm_lr_bad_id_hold
+
+mm_loader_entry:
+        jsr $3600
+        jmp mm_validate_selected_loadlist
+
+mm_validate_selected_loadlist:
+        ; $3650 = self-modified LDA load_list_ptr,Y / RTS.
+        ldy #$00
+        jsr $3650
+        tax
+        beq mm_loadlist_fail
+        ldy #$01
+mm_loadlist_scan:
+        jsr $3650
+        beq mm_loadlist_fail
+        iny
+        dex
+        bne mm_loadlist_scan
+        jsr $3650
+        bne mm_loadlist_fail
+
+        ; $3600 copied Descriptor V3.executor_ptr to $371A/$371B.
+        ; One generic indirect jump replaces the Resource-ID CMP tree.
+        ; 14 NOPs preserve the fixed routing footprint required by resident addresses.
+        jmp ($371a)
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+mm_resource01_executor:
+
+        ; $3603 = compact reader for item offset 0 (LDY #$00 / JMP $3650).
+        lda #$01
+        sta $342f
+        jsr $3603
+        sta $3430
+        jmp mm_resource01_next_item
+
+mm_loadlist_fail:
+        lda #$02
+        sta $d020
+mm_loadlist_fail_hold:
+        jmp mm_loadlist_fail_hold
+
+mm_resource01_next_item:
+        ldy $342f
+        jsr $3650
+        cmp #$01
+        beq mm_resource01_load_01
+mm_resource01_check_02:
+        cmp #$02
+        beq mm_resource01_load_02
+mm_resource01_check_03:
+        cmp #$03
+        bne mm_resource01_check_04
+        jmp mm_resource01_load_03
+mm_resource01_check_04:
+        cmp #$04
+        bne mm_resource01_item_bad
+        jmp mm_resource01_load_04
+mm_resource01_item_bad:
+        lda #$02
+        sta $d020
+mm_resource01_item_bad_hold:
+        jmp mm_resource01_item_bad_hold
+
+mm_resource01_load_01:
+    ");
+
+    KrillLoad(#resource01a);
+    asm("
+        bcc mm_resource01_after_load
+        jmp mm_resource01_load_fail
+
+mm_resource01_load_02:
+    ");
+
+    KrillLoad(#resource01b);
+    asm("
+        bcc mm_resource01_after_load
+        jmp mm_resource01_load_fail
+
+mm_resource01_load_03:
+    ");
+
+    KrillLoad(#resource01c);
+    asm("
+        bcc mm_resource01_after_load
+        jmp mm_resource01_load_fail
+
+mm_resource01_load_04:
+    ");
+
+    KrillLoad(#resource01d);
+    asm("
+        bcc mm_resource01_after_load
+        jmp mm_resource01_load_fail
+
+mm_resource01_after_load:
+        inc $342f
+        dec $3430
+        beq mm_resource01_all_loaded
+        jmp mm_resource01_next_item
+
+mm_resource01_all_loaded:
+        ; Shared parser already validated count/items/sentinel before execution.
+        jmp mm_lr_done
+
+mm_resource01_load_fail:
+        lda #$02
+        sta $d020
+mm_resource01_load_fail_hold:
+        jmp mm_resource01_load_fail_hold
+
+mm_loader_entry_resource02_fallback:
+        ; Two NOPs preserve the approved entry footprint.
+        jsr $3600
+        nop
+        nop
+        jmp mm_validate_selected_loadlist
+
+mm_resource02_executor:
+    ");
+
+    StartSidLoadIRQ();
+
+    // Resource 02: four physically distinct animation chunks.
+    KrillLoad(#resource02a);
+    KrillLoad(#resource02b);
+    KrillLoad(#resource02c);
+    KrillLoad(#resource02d);
+
+    // OPT-15D builds directly on OPT-15C PASS. The same $8D00-$A1FF carrier
+    // remains loaded. It now contains two consecutive real Resource02 Frames:
+    // Frame 15 slot at $9900-$9DFF (copied from original $8700-$8BFF) and the
+    // already proven Frame 14 payload at $9E00-$A13F. Only their page-table
+    // entries change at the Resource02 handoff; Resource01 remains untouched.
+    KrillLoad(#resource02probe);
+
+    // TWIN BANK:
+    // Existing 6 KB sidbstage carrier contains SID B + padding
+    // and loads directly into BANK B $B800-$CFFF.
+    // Activation remains deferred until the scene boundary.
+    KrillLoad(#sidbstage);
+
+    // OPT-15A: PORTADA B is outside the currently executed pipeline (Resource02 -> HOLD).
+    // Do not preload it into $9000-$A1FF.  Keep the D64 asset untouched in this test
+    // so the only functional change is removing this RAM ownership during Resource02.
+
+    StopSidLoadIRQ();
+
+    asm("
+        jmp mm_lr_done
+
+mm_lr_done:
+    ");
+end;
+
+
+procedure ApplyScrollWindow();
+begin
+    asm("
+        ; Input runtime variables:
+        ;   $F9F8 = WINDOW_X (0..39)
+        ;   $F9F9 = WINDOW_Y (0..24)
+        ;   $F9FA = WINDOW_W (1..40)
+        ;   $F9FB = WINDOW_H (1..25)
+        ; Contract: X+W <= 40, Y+H <= 25.
+        ; This helper only derives screen pointers; the effect decides any extra limits.
+
+        ; A-start = $0400 + Y*40 + X
+        lda #$00
+        sta $f8
+        lda #$04
+        sta $f9
+        ldx $f9f9
+scroll_window_y_loop:
+        cpx #$00
+        beq scroll_window_add_x
+        clc
+        lda $f8
+        adc #$28
+        sta $f8
+        bcc scroll_window_y_nocarry
+        inc $f9
+scroll_window_y_nocarry:
+        dex
+        jmp scroll_window_y_loop
+
+scroll_window_add_x:
+        clc
+        lda $f8
+        adc $f9f8
+        sta $f8
+        bcc scroll_window_x_nocarry
+        inc $f9
+scroll_window_x_nocarry:
+
+        ; Save A start for every coarse screen swap.
+        lda $f8
+        sta $f9fc
+        lda $f9
+        sta $f9fd
+
+        ; Save A start-1 (destination convention used by the approved rotator).
+        sec
+        lda $f8
+        sbc #$01
+        sta $f9fe
+        lda $f9
+        sbc #$00
+        sta $f9ff
+
+        ; Initial state: Screen A visible/source, Screen B hidden/destination.
+        lda $f9fc
+        sta $f9f4
+        lda $f9fd
+        sta $f9f5
+        lda $f9fe
+        sta $f9f6
+        lda $f9ff
+        clc
+        adc #$2c
+        sta $f9f7
+
+        lda #$07
+        sta $f9f0
+        lda #$00
+        sta $f9f1
+    ");
+end;
+
+
+// -----------------------------------------------------------------------------
+// INTRO A 4F + STATIC COLOR-LINES / TINY IRQ / KRILL SAFE
+// -----------------------------------------------------------------------------
+// This is NOT a new animation format/player. The visible renderer below is the
+// validated raw 40x25 screen/color copy strategy used by INTRO A:
+//   screen -> $0400 (1000 bytes), Color RAM low nibble -> $D800 (1000 bytes),
+//   charset -> $3800, D018=$1E, hires character mode.
+// Only ownership changes: the 4-frame step is driven by a temporary raster IRQ
+// so the existing foreground KrillLoad calls can continue unchanged.
+//
+// Stage layout loaded once at $A000 after InitKrill has discarded its installer:
+//   $A000-$A7FF charset
+//   $A800-$ABE7 Frame 01 screen    $AC00-$AFE7 Frame 01 color
+//   $B000-$B3E7 Frame 02 screen    $B400-$B7E7 Frame 02 color
+//   $B800-$BBE7 Frame 03 screen    $BC00-$BFE7 Frame 03 color
+//   $C000-$C3E7 Frame 04 screen    $C400-$C7E7 Frame 04 color
+// Temporary cover code lives at $C800 and is intentionally disposable: later
+// Resource02 BANK B owns $B800-$CFFF, after this cover has already been stopped.
+@startblock $c800 "INTRO_A"
+procedure InstallIntroA();
+begin
+    asm("
+        jmp intro_a_install
+
+; ---- temporary raster IRQ ----------------------------------------------------
+; V05: preserve the V04/V02 INTRO A animation and its coloured loading field,
+; but make the IRQ extremely small while Krill owns the foreground.
+;
+; IMPORTANT: Color RAM is NOT streamed every raster anymore.  The striped field
+; is built once before disk I/O begins.  During loading the IRQ normally does
+; only the 6-tick counter.  On a frame boundary it changes the handful of screen
+; cells plus only the colour cells that belong to the moving INTRO A figure.
+intro_a_irq:
+        pha
+        txa
+        pha
+        tya
+        pha
+
+        lda #$01
+        sta $d019
+
+        inc $cff0
+        lda $cff0
+        cmp #$18
+        bcc intro_a_irq_done
+
+        lda #$00
+        sta $cff0
+        inc $cff1
+        lda $cff1
+        and #$03
+        sta $cff1
+        jsr intro_a_apply_screen_delta
+        jsr intro_a_apply_figure_color_delta
+
+intro_a_irq_done:
+        pla
+        tay
+        pla
+        tax
+        pla
+        rti
+
+; ---- tiny figure-colour delta -----------------------------------------------
+; Background Color RAM remains the deliberate striped/glitch field.
+; Only cells whose animation colour genuinely changes are touched here.
+intro_a_apply_figure_color_delta:
+        lda $cff1
+        cmp #$01
+        beq intro_a_color_to_02
+        cmp #$02
+        beq intro_a_color_to_03
+        cmp #$03
+        beq intro_a_color_to_04
+        ; 04 -> 01
+intro_a_color_to_01:
+        lda #$01
+        sta $d9a4
+        lda #$05
+        sta $d9a2
+        lda #$07
+        sta $d9a6
+        rts
+
+intro_a_color_to_02:
+        lda #$01
+        sta $d9a5
+        lda #$05
+        sta $d9a1
+        sta $d9a3
+        sta $dabe
+        lda #$0c
+        sta $daa9
+        sta $daaa
+        sta $daab
+        sta $daac
+        rts
+
+intro_a_color_to_03:
+        lda #$01
+        sta $d9a3
+        sta $dabe
+        lda #$05
+        sta $d9a5
+        lda #$06
+        sta $da93
+        sta $da94
+        lda #$07
+        sta $d9a1
+        sta $da96
+        sta $daa9
+        sta $daaa
+        sta $daab
+        sta $daac
+        rts
+
+intro_a_color_to_04:
+        lda #$01
+        sta $d9a2
+        sta $da96
+        lda #$05
+        sta $d9a4
+        sta $d9a6
+        lda #$07
+        sta $da93
+        sta $da94
+        rts
+
+; ---- one-time static coloured loading field ---------------------------------
+; This recreates the visual state produced by the old Color-RAM sweep, but it is
+; done once BEFORE Krill starts the demo load.  The field therefore remains on
+; screen without stealing loader time.
+;
+; Base Frame 01 colour was already copied by intro_a_render_current.
+; Mix in six character rows from Frame 02 and six from Frame 03.  Frame 04 is
+; identical to Frame 01 in the bottom six rows, so the lower field stays intact.
+intro_a_build_static_glitch:
+        ldx #$00
+intro_a_glitch_band_02:
+        lda $b518,x             ; Frame 02 colour, rows 7..12
+        and #$0f
+        sta $d918,x
+        inx
+        cpx #$f0
+        bne intro_a_glitch_band_02
+
+        ldx #$00
+intro_a_glitch_band_03:
+        lda $be08,x             ; Frame 03 colour, rows 13..18
+        and #$0f
+        sta $da08,x
+        inx
+        cpx #$f0
+        bne intro_a_glitch_band_03
+
+        ; Repair current Frame 01 colours on the animated figure so the glitch
+        ; stays behind the INTRO A figure rather than corrupting its visible body.
+        lda #$07
+        sta $d9a1
+        sta $d9a6
+        sta $da93
+        sta $da94
+        lda #$05
+        sta $d9a2
+        sta $d9a5
+        lda #$01
+        sta $d9a3
+        sta $d9a4
+        sta $da96
+        rts
+
+; ---- exact 4-frame screen deltas --------------------------------------------
+; Generated directly from the supplied LVLLVL raw ScreenCharacterData BINs.
+; Only 5-9 character cells differ per transition, so the figure keeps the exact
+; source animation without copying the 1000-byte screen during disk I/O.
+intro_a_apply_screen_delta:
+        lda $cff1
+        cmp #$01
+        beq intro_a_screen_to_02
+        cmp #$02
+        beq intro_a_screen_to_03
+        cmp #$03
+        beq intro_a_screen_to_04
+        ; 04 -> 01
+intro_a_screen_to_01:
+        lda #$64
+        sta $0400
+        sta $0427
+        sta $05a6
+        sta $0696
+        lda #$a0
+        sta $06be
+        rts
+
+intro_a_screen_to_02:
+        lda #$a0
+        sta $05a1
+        sta $0696
+        lda #$60
+        sta $06a9
+        sta $06aa
+        sta $06ab
+        sta $06ac
+        lda #$64
+        sta $06be
+        rts
+
+intro_a_screen_to_03:
+        lda #$64
+        sta $05a1
+        sta $0696
+        sta $06a9
+        sta $06aa
+        sta $06ab
+        sta $06ac
+        lda #$60
+        sta $0693
+        sta $0694
+        lda #$a0
+        sta $06be
+        rts
+
+intro_a_screen_to_04:
+        lda #$60
+        sta $0400
+        sta $0427
+        lda #$a0
+        sta $05a6
+        sta $0696
+        lda #$64
+        sta $0693
+        sta $0694
+        sta $06be
+        rts
+
+; ---- renderer extracted from the existing INTRO A raw-frame path -----------
+; $CFF1 = 0..3.  Each frame occupies an $0800 slot; screen base high is
+; $A8,$B0,$B8,$C0 and color base high is +4.
+intro_a_render_current:
+        lda $cff1
+        asl
+        asl
+        asl
+        clc
+        adc #$a8
+
+        sta intro_a_screen_0+2
+        clc
+        adc #$01
+        sta intro_a_screen_1+2
+        clc
+        adc #$01
+        sta intro_a_screen_2+2
+        clc
+        adc #$01
+        sta intro_a_screen_3+2
+        clc
+        adc #$01
+        sta intro_a_color_0+2
+        clc
+        adc #$01
+        sta intro_a_color_1+2
+        clc
+        adc #$01
+        sta intro_a_color_2+2
+        clc
+        adc #$01
+        sta intro_a_color_3+2
+
+        ldx #$00
+intro_a_screen_pages:
+intro_a_screen_0:
+        lda $a800,x
+        sta $0400,x
+intro_a_screen_1:
+        lda $a900,x
+        sta $0500,x
+intro_a_screen_2:
+        lda $aa00,x
+        sta $0600,x
+        inx
+        bne intro_a_screen_pages
+
+        ldx #$00
+intro_a_screen_tail:
+intro_a_screen_3:
+        lda $ab00,x
+        sta $0700,x
+        inx
+        cpx #$e8
+        bne intro_a_screen_tail
+
+        ldx #$00
+intro_a_color_pages:
+intro_a_color_0:
+        lda $ac00,x
+        and #$0f
+        sta $d800,x
+intro_a_color_1:
+        lda $ad00,x
+        and #$0f
+        sta $d900,x
+intro_a_color_2:
+        lda $ae00,x
+        and #$0f
+        sta $da00,x
+        inx
+        bne intro_a_color_pages
+
+        ldx #$00
+intro_a_color_tail:
+intro_a_color_3:
+        lda $af00,x
+        and #$0f
+        sta $db00,x
+        inx
+        cpx #$e8
+        bne intro_a_color_tail
+        rts
+
+; ---- one-time install --------------------------------------------------------
+intro_a_install:
+        sei
+        lda #$35
+        sta $01
+
+        ; atomic BASIC -> INTRO A handoff.  Keep the BASIC VIC mapping
+        ; untouched until the INTRO A stage is completely resident.  Now hide
+        ; the display BEFORE selecting $3800 so no BASIC character can ever be
+        ; interpreted through RESOURCE 01 or through a half-copied INTRO A charset.
+        lda $d011
+        and #$ef
+        sta $d011
+
+        ; INTRO A charset-copy contract, source fixed at $A000.
+        lda #$00
+        sta $fb
+        lda #$a0
+        sta $fc
+        lda #$00
+        sta $fd
+        lda #$38
+        sta $fe
+        ldy #$00
+intro_a_charset_copy:
+        lda ($fb),y
+        sta ($fd),y
+        iny
+        bne intro_a_charset_copy
+        inc $fc
+        inc $fe
+        lda $fe
+        cmp #$40
+        bne intro_a_charset_copy
+
+        ; Only after all 2048 INTRO A charset bytes are in $3800 do we
+        ; select the normal engine character mode.
+        lda $d011
+        and #$9f
+        sta $d011
+        lda $d016
+        and #$ef
+        sta $d016
+        lda #$1e
+        sta $d018
+        lda #$00
+        sta $d020
+        sta $d021
+        sta $d022
+        sta $d023
+        sta $d024
+
+        lda #$00
+        sta $cff0
+        sta $cff1
+        jsr intro_a_render_current
+        jsr intro_a_build_static_glitch
+
+        ; Frame 01 + color + charset are complete.  Bring the display back only
+        ; at a safe raster boundary: BASIC disappears directly into INTRO A.
+intro_a_show_wait20:
+        lda $d012
+        cmp #$20
+        bne intro_a_show_wait20
+        lda $d011
+        ora #$10
+        sta $d011
+
+        ; Temporary raster ownership only for the loading cover.
+        lda #$7f
+        sta $dc0d
+        sta $dd0d
+        lda $dc0d
+        lda $dd0d
+
+        lda #<intro_a_irq
+        sta $fffe
+        lda #>intro_a_irq
+        sta $ffff
+        lda $d011
+        and #$7f
+        sta $d011
+        lda #$fa
+        sta $d012
+        lda #$01
+        sta $d019
+        sta $d01a
+        cli
+    ");
+end;
+
+procedure StopIntroA();
+begin
+    asm("
+        sei
+        lda #$00
+        sta $d01a
+        lda #$01
+        sta $d019
+
+        ; Hide display while the already-approved RESOURCE 01 Frame 01 is rebuilt.
+        lda $d011
+        and #$ef
+        sta $d011
+
+        lda #$35
+        sta $01
+    ");
+end;
+@endblock
+
+
+begin
+    // KRILL installer lives in RAM under BASIC ROM at $A000.
+    // Preserve current CPU-port mapping, hide BASIC only for InitKrill,
+    // then restore the exact previous mapping.
+    asm("
+        lda $01
+        pha
+        and #$fe
+        sta $01
+    ");
+    InitKrill();
+    asm("
+        pla
+        sta $01
+
+                ; BANK16A: move the RESOURCE 01 charset backup out of $9000-$97FF.
+        ; $E800-$EFFF is phase-safe here: INTRO A owns $A000-$C7E7, while
+        ; PORTADA A screen/color stop at $E7E7 and code starts at $F000.
+        ; This frees $9000-$97FF during CARGA 1 for the future universal animation bank.
+        ldx #$00
+boot_save_resource01_charset:
+        lda $3800,x
+        sta $e800,x
+        lda $3900,x
+        sta $e900,x
+        lda $3a00,x
+        sta $ea00,x
+        lda $3b00,x
+        sta $eb00,x
+        lda $3c00,x
+        sta $ec00,x
+        lda $3d00,x
+        sta $ed00,x
+        lda $3e00,x
+        sta $ee00,x
+        lda $3f00,x
+        sta $ef00,x
+        inx
+        bne boot_save_resource01_charset
+    ");
+
+    // LAB V05: keep the stock BASIC VIC/charset visible while the first
+    // INTRO A package is read.  Do NOT point VIC at $3800 yet: that address
+    // still contains the RESOURCE 01 charset at this moment.
+    DiskBegin();
+
+    // LAB V05: load the complete 4-frame cover once, then animate it while
+    // the untouched demo resources are loaded by the existing Krill path.
+    KrillLoad(#introastage);
+    asm("
+        bcc boot_intro_a_stage_ok
+        lda #$02
+        sta $d020
+boot_intro_a_stage_fail:
+        jmp boot_intro_a_stage_fail
+boot_intro_a_stage_ok:
+    ");
+    InstallIntroA();
+
+    // Every later LoadResource() call is lookup/dispatch only.
+    InitResourceVectors();
+
+    // Descriptor $37A0; offsets $37C0; layout helper $37C8.
+
+    // Script data is 01,02,03,04,00; main no longer embeds the requested ID here.
+    asm("
+        jsr $3726
+        nop
+        nop
+    ");
+
+    // Reuse the exact approved hotload phase gate from PORTADA A.
+    // IRQ stays enabled; the INTRO A owns the visual raster lane.
+    StartSidLoadIRQ();
+    LoadResource();
+
+    // Resource01 animation is already fully loaded.
+    // Prepare PORTADA 01 NOW, before Resource01 starts.
+    //
+    // PORTADA 01 code  -> $F000-$F8DE
+    // PORTADA 01 chars -> $E000-$E7CF
+    // PORTADA 01 color -> $E800-$EFCF
+    // Charset is already resident at $3800 and is byte-identical to PORTADA 01.
+
+    KrillLoad(#portadaacode);
+    asm("
+        bcc boot_portada_code_ok
+        lda #$02
+        sta $d020
+boot_portada_code_fail:
+        jmp boot_portada_code_fail
+boot_portada_code_ok:
+    ");
+
+    KrillLoad(#portadaachars);
+    asm("
+        bcc boot_portada_chars_ok
+        lda #$02
+        sta $d020
+boot_portada_chars_fail:
+        jmp boot_portada_chars_fail
+boot_portada_chars_ok:
+    ");
+
+    KrillLoad(#portadaacolors);
+    asm("
+        bcc boot_portada_colors_ok
+        lda #$02
+        sta $d020
+boot_portada_colors_fail:
+        jmp boot_portada_colors_fail
+boot_portada_colors_ok:
+    ");
+
+    // BANK16A: no charset disk load here. RESOURCE 01 charset is preserved at
+    // $E800-$EFFF, leaving $9000-$97FF free throughout CARGA 1.
+
+    // Close the same approved loader phase used by the existing cover path.
+    StopSidLoadIRQ();
+
+    // Initial demo payload is fully resident. End only the temporary loading
+    // cover.  StopIntroA hides display and leaves RAM mapped $35.
+    StopIntroA();
+
+    // BANK16F: isolate RAM ownership from disk-loader behaviour.
+    // NO new KrillLoad and NO new D64 entry.  Fill only $8D00-$8FFF
+    // (768 bytes) directly from the CPU after INTRO A is stopped.
+    // If this passes, the range itself is safe post-INTRO and the BANK16B/C/E
+    // failures belong to the extra KrillLoad phase rather than to $8D00-$8FFF.
+    asm("
+        ldx #$00
+bank16f_fill_8d:
+        txa
+        eor #$5a
+        sta $8d00,x
+        sta $8e00,x
+        sta $8f00,x
+        inx
+        bne bank16f_fill_8d
+    ");
+
+    // SPR-ENGINE-02: stage complete 8-frame / 4-sprite bank at $A800-$AFFF (2048 B).
+    // Display is hidden here; use the approved loader IRQ gate for this extra disk read.
+    StartSidLoadIRQ();
+    // Load raw Sprite Core into phase-free RAM, then its 8-frame bank.
+    KrillLoad(#spritecore);
+    asm("
+        bcc spr_engine_core_load_ok
+        lda #$02
+        sta $d020
+spr_engine_core_load_fail:
+        jmp spr_engine_core_load_fail
+spr_engine_core_load_ok:
+    ");
+    KrillLoad(#spriteanim);
+    asm("
+        bcc spr_engine_anim_load_ok
+        lda #$02
+        sta $d020
+spr_engine_anim_load_fail:
+        jmp spr_engine_anim_load_fail
+spr_engine_anim_load_ok:
+    ");
+    StopSidLoadIRQ();
+
+    // Restore the exact RESOURCE 01 charset BEFORE rebuilding/showing RESOURCE 01.
+    // No disk access here: V05 preserved it at the now-free Krill origin window.
+    // BANK16A: eight full pages = 2048 bytes, $E800-$EFFF -> $3800-$3FFF.
+    // $9000-$97FF remains untouched/free for the future animation bank.
+    asm("
+        ldx #$00
+boot_restore_resource01_charset:
+        lda $e800,x
+        sta $3800,x
+        lda $e900,x
+        sta $3900,x
+        lda $ea00,x
+        sta $3a00,x
+        lda $eb00,x
+        sta $3b00,x
+        lda $ec00,x
+        sta $3c00,x
+        lda $ed00,x
+        sta $3d00,x
+        lda $ee00,x
+        sta $3e00,x
+        lda $ef00,x
+        sta $3f00,x
+        inx
+        bne boot_restore_resource01_charset
+    ");
+
+    // Reapply the MASTER video contract only now, with RESOURCE 01 charset restored.
+    InitVideo();
+
+    // Continue Resource01 setup after preloading the cover resources.
+    asm("
+        lda $4400
+        cmp #$01
+        bne animation_header_fail_near
+        lda $4401
+        cmp #$01
+        bne animation_header_fail_near
+        lda $4402
+        cmp #$20
+        bne animation_header_fail_near
+        jmp animation_header_ok
+animation_header_fail_near:
+        jmp animation_header_fail
+animation_header_fail:
+        sei
+        lda #$02
+        sta $d020
+        jmp animation_header_fail
+animation_header_ok:
+
+        ldx #$00
+animation_copy_screen_pages:
+        lda $440c,x
+        sta $0400,x
+        lda $450c,x
+        sta $0500,x
+        lda $460c,x
+        sta $0600,x
+        inx
+        bne animation_copy_screen_pages
+
+        ldx #$00
+animation_copy_screen_tail:
+        lda $470c,x
+        sta $0700,x
+        inx
+        cpx #$e8
+        bne animation_copy_screen_tail
+
+        lda #$f4
+        sta $fb
+        lda #$47
+        sta $fc
+        lda #$00
+        sta $fd
+        lda #$d8
+        sta $fe
+        lda #$f4
+        sta $f7
+        lda #$01
+        sta $f8
+
+animation_color_loop:
+        ldy #$00
+        lda ($fb),y
+        tax
+        and #$0f
+        sta ($fd),y
+        inc $fd
+        bne animation_color_dest1_ok
+        inc $fe
+animation_color_dest1_ok:
+        txa
+        lsr
+        lsr
+        lsr
+        lsr
+        ldy #$00
+        sta ($fd),y
+        inc $fd
+        bne animation_color_dest2_ok
+        inc $fe
+animation_color_dest2_ok:
+        inc $fb
+        bne animation_color_src_ok
+        inc $fc
+animation_color_src_ok:
+        sec
+        lda $f7
+        sbc #$01
+        sta $f7
+        lda $f8
+        sbc #$00
+        sta $f8
+        ora $f7
+        bne animation_color_loop
+
+        lda #$00
+        nop
+        sta $d020
+        lda $4404
+        sta $d021
+        lda $4405
+        sta $d022
+        lda $4406
+        sta $d023
+        lda $4407
+        sta $d024
+
+        ; LAB V02 clean handoff: RESOURCE 01 charset + Frame 01 complete before display returns.
+boot_intro_a_handoff_wait20:
+        lda $d012
+        cmp #$20
+        bne boot_intro_a_handoff_wait20
+        lda $d011
+        ora #$10
+        sta $d011
+
+        ; SLOT 1 SID A test: reset native CIA-start flag.
+        ; Same 16-byte footprint as the approved NOP reserve.
+        lda #$00
+        sta $43af
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+        nop
+
+        ; D418 hook volume controller.
+        ; AUDIO SLOT A begins at its normal full volume.
+        lda #$0f
+        sta $43a7
+        sta $43a8
+        lda #$00
+        sta $43a9
+        sta $43ab
+        lda #$04
+        sta $43aa
+
+        lda #$00
+        ; SID A INIT + capture its private Zero Page state.
+        jsr $34de
+
+        ; PERMANENT PAL SID CLOCK
+        sei
+        lda #$35
+        sta $01
+
+        lda #$00
+        sta $43ff
+
+        ; SLOT 1 SID A: combined CIA audio + VIC visual IRQ gate.
+        lda #$89
+        sta $fffe
+        lda #$2e
+        sta $ffff
+
+        lda #$7f
+        sta $dc0d
+        sta $dd0d
+        lda $dc0d
+        lda $dd0d
+
+        ; MASTER IRQ moved to safe raster $FA.
+        ; Visual timing remains at $FA.
+        ; This gives long SID PLAY routines enough time to finish
+        ; before the visual scheduler polls raster $FA.
+        lda $d011
+        and #$7f
+        sta $d011
+        lda #$fa
+        sta $d012
+        lda #$01
+        sta $d019
+        sta $d01a
+        cli
+
+        ; Frame timing is metadata-driven; current visible-frame counter lives at $43A5.
+        ; $43A5 = ticks de la frame visible; $2205 ya no contiene #$60 fijo.
+        ; $4399 = 0 => A ($0400) visible, B ($3000) oculto.
+        lda #$00
+        sta $4399
+
+        ; TEST HOLD-02D: normal RESOURCE 01 timing remains the RITMO-02 profile.
+        ; The MOTOR now supports a generic FINAL-LOOP override table at $2F30-$2F4F.
+        ; Only when loops_remaining ($40A7) == 1 and owner Resource matches,
+        ; nonzero override entries replace the normal $4087-$40A6 timing for that Frame; all other entries are $00.
+        lda #$10
+        sta $4077
+        lda $4087
+        sta $43a5
+        nop
+        nop
+        nop
+        nop
+        nop
+
+        ; TWO SID SHORT VALIDATION
+        ; SCENE 1: AUDIO SLOT A + 16 frames, 4 complete loops for this isolation test.
+        ; Preserve exact MASTER exit timing at the scene transition.
+        ; scheduler32_compact starts with LDA #loops at $4004/$4005.
+        ; Patch ONLY the immediate operand byte from relocated loop metadata; scheduler logic/size unchanged.
+        lda $345d
+        sta $4005
+
+        lda $3714
+        jsr $3740
+
+        ; Resource01 finished: restore canonical 32-tick timing before PORTADA/Resource02.
+        lda #$20
+        sta $4077
+        sta $43a5
+    ");
+
+    //
+    // Resource01 animation has returned.
+    // PORTADA 01 was already loaded BEFORE Resource01 started.
+    // Therefore there must be NO drive access before the cover appears.
+
+    asm("
+        ; REINTEGRACION PORTADA NUEVA 40x25.
+        ; $E000 = screen 1000 B, $E400 = color 1000 B.
+        ; $F000 installer copies charset to $3800 and contains scroll engine at $F900.
+        jsr $f000
+
+        ; WINDOW runtime configurable. Current approved cover rectangle: 36x20 at (2,2).
+        lda #$02
+        sta $f9f8                 ; WINDOW_X
+        lda #$02
+        sta $f9f9                 ; WINDOW_Y
+        lda #$24
+        sta $f9fa                 ; WINDOW_W = 36
+        lda #$14
+        sta $f9fb                 ; WINDOW_H = 20
+    ");
+
+    ApplyScrollWindow();
+
+    asm("
+        lda $d016
+        and #$f0
+        ora #$07
+        sta $d016
+
+        ; SID PLAY is always executed first; visual ScrollStep is optional second.
+        lda #$fa
+        sta $d012
+
+        ; SHOW -> STATIC for 70 IRQ ticks -> SCROLL.
+        ; Keep visual IRQ scroll OFF during the static window; SID PLAY stays alive.
+        lda #$00
+        sta $43ff
+
+        ; TEST SCROLL-11: Wait 70 complete static ticks, then enable SCROLL and let it run cleanly
+        ; for 1408 additional MASTER IRQ ticks before the resource request.
+    ");
+
+    WaitPortadaScrollLoadDelay();
+
+    asm("
+        ; Request next resource after the clean-scroll window.
+        jsr $3726
+        nop
+        nop
+    ");
+    // While PORTADA A is alive, preload fresh Resource02 + PORTADA B.
+    LoadResource();
+
+    // One compact resident command owns START/DELAY + TARGET + RATE.
+    // MAIN only dispatches it; no dormant low-memory scheduler is linked in.
+    FadeTimelineLane0Short();
+
+    asm("
+        ; Fade reached absolute zero. End PORTADA A visual ownership only now.
+        ; Audio MASTER IRQ remains untouched.
+        lda #$00
+        sta $43ff
+    ");
+    // SPR-ENGINE-04: close PORTADA A sprite ownership and restore its borrowed charset page
+    // before RESOURCE 02 rebuilds its own visual state.
+    asm("
+        jsr $a3b0
+    ");
+
+    // Generic physical SID handoff ($D400):
+    // BANK B $B800-$CFFF -> EXEC $1000-$27FF at the scene boundary.
+    // SID B is already resident as a fixed 6 KB logical bank.
+    // INIT=$1000 / PLAY=$1003; private SID ZP is captured before IRQ resumes.
+    // Finish the visual handoff first so the secondary SID does not
+    // spend its opening while Frame 01 is rebuilt with the display hidden.
+    PrepareFreshAnimationVisual();
+
+    SwitchToAudioSlotB();
+
+    // SPR-ENGINE-08B: RESOURCE 02 starts clean, without sprites.
+    // After 3 loops the Sprite Engine appears centered/animated but static in X.
+    // After 3 additional loops, horizontal ping-pong movement is enabled.
+
+    asm("
+        ; MASTER 03/10/2026: RESOURCE 02 approved cadence [24,24,24,28] x4.
+        ; Every approved SYNC-H2-02 duration is doubled: 24,24,24,28 repeated x4.
+        ; 16 visual Frames = 400 PAL ticks per complete animation loop.
+        ; $2F50-$2F5F owns this isolated Resource02 timing profile.
+        ; $4087-$40A6 remains the scheduler's canonical per-Frame timing table.
+        ; G02 frame_count stays descriptor-driven: N Frames -> last index N-1 at $4027.
+        ldx $3708
+        dex
+        stx $4027
+g03a_r2_timing_fill:
+        lda $2f50,x
+        sta $4087,x
+        dex
+        bpl g03a_r2_timing_fill
+
+        ; SPR-ENGINE-08B: first show RESOURCE 02 alone for EXACTLY three complete loops.
+        lda #$03
+        sta $4005
+        lda $3714
+        jsr $3740
+
+        ; Three loops completed: show centered 8-frame Sprite Engine, still STATIC in X.
+        ; $A300 is the approved show/init entry; animation tick remains active.
+        jsr $a300
+
+        ; Keep the animated sprites centered for EXACTLY three more RESOURCE 02 loops
+        ; at the original cadence.
+        lda #$03
+        sta $4005
+        lda $3714
+        jsr $3740
+
+        ; SPR-ENGINE-13: movement start and fast RESOURCE 02 cadence become one atomic event.
+        ; From the next visual step onward use [12,14,12,14] x4 while the approved
+        ; horizontal ping-pong begins at 2 px/IRQ.
+        sei
+        ldx #$0f
+spr13_fast_timing_fill:
+        lda $2f60,x
+        sta $4087,x
+        dex
+        bpl spr13_fast_timing_fill
+        lda #$01
+        sta $a6f0
+        sta $a6f1
+        cli
+
+        ; Then resume the approved RESOURCE 02 infinite cadence.
+        ; Normal metadata remains $345E = 4 loops per dispatcher batch.
+resource02_infinite_loop:
+        lda $345e
+        sta $4005
+        ; Execute exactly the Resource ID selected by NextResource/LoadResource.
+        ; No Resource02 literal here; dispatcher remains unchanged.
+        lda $3714
+        jsr $3740
+        jmp resource02_infinite_loop
+    ");
+
+end.
