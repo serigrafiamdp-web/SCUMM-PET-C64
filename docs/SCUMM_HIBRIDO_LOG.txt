@@ -234,3 +234,15 @@ CPU fill $8D00-$9FFF post-INTRO, sin KrillLoad extra.
 ======================================================================
 FIN DEL LOG ACTUAL
 ======================================================================
+
+
+RESTAURACION MAPA VISUAL ASCII - 08/10/2026
+-------------------------------------------
+- Se restaura SCUMM_HIBRIDO_MAPA_MILESTONES.txt como MAPA VISUAL + contrato tecnico,
+  recuperando diagramas ASCII del motor que se habian perdido al convertirlo a una lista.
+- El formato visual vuelve a ser el formato oficial del mapa de arquitectura.
+- El contenido se actualiza al estado actual: BANK16F PASS, BANK16G pendiente,
+  candidato de banco unico, TOOL V0.40 oficial y cadena objetivo INTRO -> ANIMACION
+  -> PORTADA/carga -> siguiente ANIMACION.
+- README.md incorpora un resumen ASCII del motor actual para que la portada de GitHub
+  muestre la arquitectura de un vistazo.
