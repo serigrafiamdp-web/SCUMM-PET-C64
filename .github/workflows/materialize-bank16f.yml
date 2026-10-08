@@ -1,9 +1,9 @@
-name: Materialize BANK16F master PASS
+name: Verify and materialize BANK16F master PASS
 
 on:
   push:
     paths:
-      - "releases/BANK16F/READY"
+      - "releases/BANK16F/TEST_BANK16F_POSTINTRO_CPU_FILL_8D00_8FFF.zip"
   workflow_dispatch:
 
 permissions:
@@ -17,37 +17,35 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Rebuild exact BANK16F ZIP
+      - name: Verify exact PASS snapshot
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p /tmp/bank16f
-          cat releases/BANK16F/base64/part-*.txt > /tmp/BANK16F.b64
-          base64 --decode /tmp/BANK16F.b64 > /tmp/TEST_BANK16F_POSTINTRO_CPU_FILL_8D00_8FFF.zip
-          echo "e0e7374844aedae1f01941ab4acdd89130afcd0797a7db1616e211b6d303730b  /tmp/TEST_BANK16F_POSTINTRO_CPU_FILL_8D00_8FFF.zip" | sha256sum -c -
+          cd releases/BANK16F
+          sha256sum -c SHA256SUMS.txt
 
-      - name: Extract working tree
+      - name: Extract complete working tree
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf engine
-          mkdir -p engine releases/BANK16F
-          unzip -q /tmp/TEST_BANK16F_POSTINTRO_CPU_FILL_8D00_8FFF.zip -d /tmp/bank16f
+          rm -rf engine /tmp/bank16f
+          mkdir -p engine /tmp/bank16f
+          unzip -q releases/BANK16F/TEST_BANK16F_POSTINTRO_CPU_FILL_8D00_8FFF.zip -d /tmp/bank16f
           cp -a /tmp/bank16f/bank16f_work/. engine/
+          # docs/ contains the live/current documentation; avoid restoring the older
+          # copies that were bundled inside the historical PASS ZIP.
           rm -f engine/SCUMM_HIBRIDO_LOG.txt engine/SCUMM_HIBRIDO_MAPA_MILESTONES.txt
-          cp /tmp/TEST_BANK16F_POSTINTRO_CPU_FILL_8D00_8FFF.zip releases/BANK16F/
-          rm -rf releases/BANK16F/base64 releases/BANK16F/READY
 
-      - name: Commit exact PASS master
+      - name: Commit materialized engine tree
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add engine
           if git diff --cached --quiet; then
-            echo "Nothing to commit"
+            echo "Engine tree already matches BANK16F."
             exit 0
           fi
-          git commit -m "master: materialize BANK16F PASS engine"
+          git commit -m "master: materialize BANK16F PASS engine tree"
           git push
