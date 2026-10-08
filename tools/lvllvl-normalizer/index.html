@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>LVLLVL → SCUMM Resource Builder</title>
+<style>
+:root{--bg:#0d0f14;--panel:#151922;--panel2:#1c2230;--text:#f4f5f7;--muted:#a7afbf;--ok:#41d17d;--warn:#ffcb5c;--bad:#ff6b6b;--line:#2a3242;--accent:#7aa2ff}
+*{box-sizing:border-box}body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text)}
+header{padding:28px 28px 18px;border-bottom:1px solid var(--line);background:#10141c}h1{margin:0 0 6px;font-size:24px}header p{margin:0;color:var(--muted)}
+main{max-width:1320px;margin:0 auto;padding:24px}.drop{border:2px dashed #42506a;border-radius:16px;padding:34px;text-align:center;background:var(--panel);cursor:pointer;transition:.2s}.drop.drag{border-color:var(--accent);background:#182239}.drop strong{display:block;font-size:18px;margin-bottom:8px}.drop span{color:var(--muted)}
+#fileInput{display:none}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:18px}.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px}.card .k{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}.card .v{font-size:23px;font-weight:750;margin-top:5px}.status-ok{color:var(--ok)}.status-warn{color:var(--warn)}.status-bad{color:var(--bad)}
+section{margin-top:18px}.section-title{font-size:16px;margin:0 0 10px}.two{display:grid;grid-template-columns:1.05fr .95fr;gap:16px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;min-width:0}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:8px 9px;border-bottom:1px solid var(--line)}th{color:var(--muted);font-weight:600}.pill{display:inline-block;padding:2px 7px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);font-size:12px}.pill.full{color:#8cc8ff}.pill.changes{color:#c9a8ff}.pill.rle{color:#ffbd76}.pill.ok{color:var(--ok)}
+.warnbox,.errbox,.okbox{border-radius:10px;padding:11px 12px;margin:8px 0;font-size:13px}.warnbox{background:#332a15;border:1px solid #6b5524;color:#ffe3a0}.errbox{background:#33191c;border:1px solid #6d2b31;color:#ffc2c7}.okbox{background:#153123;border:1px solid #276c48;color:#b8f5d0}
+.preview-wrap{display:flex;flex-direction:column;gap:10px}.canvas-box{display:flex;justify-content:center;align-items:center;background:#05070a;border:1px solid var(--line);border-radius:10px;padding:10px;overflow:auto}canvas{image-rendering:pixelated;image-rendering:crisp-edges;max-width:100%;height:auto}.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}button{background:#222a38;color:var(--text);border:1px solid #3b465b;border-radius:9px;padding:8px 12px;cursor:pointer}button:hover{border-color:#667795}button.primary{background:#294b92;border-color:#416fc4}button:disabled{opacity:.45;cursor:not-allowed;border-color:#3b465b}select{background:#222a38;color:var(--text);border:1px solid #3b465b;border-radius:9px;padding:8px 10px;max-width:100%}.controls input[type=range]{flex:1;min-width:180px}.small{font-size:12px;color:var(--muted)}pre{white-space:pre-wrap;word-break:break-word;background:#0b0e13;border:1px solid var(--line);padding:12px;border-radius:10px;max-height:300px;overflow:auto;color:#cbd3df}
+.hidden{display:none!important}.footer-note{color:var(--muted);font-size:12px;margin-top:18px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}@media(max-width:900px){.grid{grid-template-columns:repeat(2,1fr)}.two{grid-template-columns:1fr}}@media(max-width:560px){.grid{grid-template-columns:1fr}main{padding:14px}header{padding:20px 16px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>LVLLVL → SCUMM Resource Builder</h1>
+  <p>V0.30 · Importador + compresor propio <b>ANIMATION V2</b> para exportaciones C64 NEW. Todo se procesa localmente.</p>
+</header>
+<main>
+  <label class="drop" id="dropZone" for="fileInput">
+    <strong>Arrastrá aquí el SOURCE.zip exportado por LVLLVL</strong>
+    <span>o hacé clic para elegirlo. No se sube a ningún servidor.</span>
+  </label>
+  <input id="fileInput" type="file" accept=".zip,application/zip" />
+
+  <div id="loading" class="panel hidden" style="margin-top:16px">Analizando ZIP…</div>
+  <div id="results" class="hidden">
+    <div class="grid">
+      <div class="card"><div class="k">Resultado</div><div class="v" id="statusValue">—</div></div>
+      <div class="card"><div class="k">Resource detectado</div><div class="v" id="typeValue">—</div></div>
+      <div class="card"><div class="k">Frames</div><div class="v" id="framesValue">—</div></div>
+      <div class="card"><div class="k">Charset</div><div class="v" id="charsetValue">—</div></div>
+    </div>
+
+    <section class="two">
+      <div class="panel">
+        <h2 class="section-title">Diagnóstico</h2>
+        <div id="messages"></div>
+      </div>
+      <div class="panel">
+        <h2 class="section-title">Tamaño / compresión LVLLVL</h2>
+        <table><tbody id="sizeStats"></tbody></table>
+      </div>
+    </section>
+
+    <section class="two">
+      <div class="panel">
+        <h2 class="section-title">Frames detectados</h2>
+        <div style="overflow:auto;max-height:460px">
+          <table>
+            <thead><tr><th>#</th><th>Mapa</th><th>Bytes</th><th>Color</th><th>Bytes</th><th>Delay</th><th>BG</th></tr></thead>
+            <tbody id="framesTable"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel preview-wrap">
+        <h2 class="section-title">Preview reconstruido</h2>
+        <div class="canvas-box"><canvas id="screen" width="320" height="200"></canvas></div>
+        <div class="controls">
+          <button id="prevBtn">◀</button><button id="playBtn">▶ Reproducir</button><button id="nextBtn">▶</button>
+          <input id="frameSlider" type="range" min="0" max="0" value="0" />
+          <span id="frameLabel" class="mono">Frame 1</span>
+        </div>
+        <div class="small">El preview representa screen/color reconstruidos. Los Animated Chars se informan como warning y todavía no se animan en esta versión.</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2 class="section-title">Política de color</h2>
+      <div class="two">
+        <div>
+          <label class="small" for="colorPolicy">Normalización antes de comprimir</label><br>
+          <select id="colorPolicy">
+            <option value="preserve">Preservar colores del source LVLLVL</option>
+            <option value="red02to0c">Sanitizar rojo: $02 → $0C (preserva $01 blanco)</option>
+          </select>
+          <p class="small">El remapeo se aplica sólo al Resource exportado y queda registrado en el manifest. $01 (blanco) se conserva. No se modifica el ZIP original.</p>
+        </div>
+        <div id="colorStats"></div>
+      </div>
+    </section>
+
+    <section class="two">
+      <div class="panel">
+        <h2 class="section-title">Animated Chars</h2>
+        <div id="animatedStats"></div>
+      </div>
+      <div class="panel">
+        <h2 class="section-title">Export</h2>
+        <p class="small">El reporte documenta el source. El Resource SCUMM V2 se habilita sólo si el round-trip es exacto y el framepack entra en el presupuesto aprobado de 18.688 bytes. El ZIP declara además el perfil runtime V2E requerido.</p>
+        <div class="controls">
+          <button id="downloadReport">Descargar reporte JSON</button>
+          <button class="primary" id="downloadScumm" disabled>Exportar Resource SCUMM V2</button>
+        </div>
+      </div>
+    </section>
+
+
+    <section class="panel">
+      <h2 class="section-title">Normalización SCUMM ANIMATION V2 · Engine V2E</h2>
+      <div id="scummReady"></div>
+      <div class="two" style="margin-top:12px">
+        <div>
+          <table><tbody id="scummStats"></tbody></table>
+        </div>
+        <div style="overflow:auto;max-height:330px">
+          <table>
+            <thead><tr><th>#</th><th>Map</th><th>B</th><th>Color</th><th>B</th></tr></thead>
+            <tbody id="scummFramesTable"></tbody>
+          </table>
+        </div>
+      </div>
+      <p class="small" style="margin-bottom:0">Frame 1 se fuerza FULL/FULL4. Desde Frame 2, mapa compara FULL / DELTA / RLE / BITMAP_DELTA contra N−1; color compara FULL4 / DELTA / RLE / PACKED_BITMAP_DELTA. No se deduplican frames completos. El Resource declara el contrato V2E: front→back antes del delta, BITMAP fast-path y presentación screen swap → Color RAM.</p>
+    </section>
+
+    <section class="panel">
+      <h2 class="section-title">Contrato runtime ANIMATION_16F · V2E</h2>
+      <div class="two">
+        <div class="okbox"><b>Screen</b><br>Delta contra Frame N−1. El motor debe copiar primero la pantalla visible al buffer oculto (front→back) y recién después aplicar el decoder.</div>
+        <div class="okbox"><b>Presentación</b><br>Orden validado: <b>screen swap → Color RAM</b>. No apagar DEN y no usar N−2.</div>
+      </div>
+      <p class="small" style="margin-bottom:0">BITMAP_DELTA requiere el fast-path validado: un byte de bitmap $00 salta 8 celdas. Color RAM no está doble-buffered. Estas reglas quedan escritas en <span class="mono">resource.json</span> y <span class="mono">ENGINE_V2E.txt</span>.</p>
+    </section>
+
+    <section class="panel">
+      <h2 class="section-title">Detalle técnico</h2>
+      <pre id="technical"></pre>
+    </section>
+  </div>
+  <div class="footer-note">V0.40: ANIMATION importer + SCUMM_ANIMATION_V2 + contrato runtime V2E validado (front→back, BITMAP fast, swap→Color RAM). INTRO y PORTADA siguen siendo perfiles funcionales separados.</div>
+</main>
+<script>
+(() => {
+'use strict';
+const $ = s => document.querySelector(s);
+const palette = [
+  [0,0,0],[255,255,255],[136,0,0],[170,255,238],[204,68,204],[0,204,85],[0,0,170],[238,238,119],
+  [221,136,85],[102,68,0],[255,119,119],[51,51,51],[119,119,119],[170,255,102],[0,136,255],[187,187,187]
+];
+let currentAnalysis=null, playTimer=null, currentFrame=0;
+const COLOR_POLICY_PRESERVE='preserve', COLOR_POLICY_RED='red02to0c';
+
+function u16(a,o){return a[o]|(a[o+1]<<8)}
+function u32(a,o){return (a[o]|(a[o+1]<<8)|(a[o+2]<<16)|(a[o+3]<<24))>>>0}
+function findEOCD(a){for(let i=a.length-22;i>=Math.max(0,a.length-65557);i--)if(u32(a,i)===0x06054b50)return i;throw new Error('ZIP inválido: no se encontró el directorio central.');}
+async function inflateRaw(bytes){if(typeof DecompressionStream==='undefined')throw new Error('Este navegador no soporta descompresión ZIP local. Usá una versión actual de Edge o Chrome.');const ds=new DecompressionStream('deflate-raw');const stream=new Blob([bytes]).stream().pipeThrough(ds);return new Uint8Array(await new Response(stream).arrayBuffer());}
+async function unzipLocal(file){
+  const a=new Uint8Array(await file.arrayBuffer()), e=findEOCD(a), count=u16(a,e+10), cd=u32(a,e+16), td=new TextDecoder();
+  let p=cd; const out=new Map();
+  for(let n=0;n<count;n++){
+    if(u32(a,p)!==0x02014b50)throw new Error('ZIP inválido: entrada central corrupta.');
+    const method=u16(a,p+10), csize=u32(a,p+20), usize=u32(a,p+24), nl=u16(a,p+28), xl=u16(a,p+30), cl=u16(a,p+32), lo=u32(a,p+42);
+    const name=td.decode(a.slice(p+46,p+46+nl)).replace(/\\/g,'/'); p+=46+nl+xl+cl;
+    if(name.endsWith('/'))continue;
+    if(u32(a,lo)!==0x04034b50)throw new Error('ZIP inválido: cabecera local corrupta.');
+    const lnl=u16(a,lo+26), lxl=u16(a,lo+28), start=lo+30+lnl+lxl, comp=a.slice(start,start+csize);
+    let data; if(method===0)data=comp; else if(method===8)data=await inflateRaw(comp); else throw new Error(`ZIP usa compresión no soportada (método ${method}) en ${name}.`);
+    if(usize && data.length!==usize)throw new Error(`Tamaño descomprimido inesperado en ${name}.`);
+    out.set(name,data);
+  }
+  return out;
+}
+function baseName(p){return p.split('/').pop().toLowerCase()}
+function findFile(files, rel){rel=rel.toLowerCase().replace(/^\/+/, '');for(const [k,v] of files){const n=k.toLowerCase().replace(/^\/+/, '');if(n===rel||n.endsWith('/'+rel))return {path:k,data:v};}return null;}
+function textOf(f){return new TextDecoder().decode(f.data)}
+function parseAsmBytes(text){const out=[];for(const line of text.split(/\r?\n/)){const m=line.match(/!byte\s+(.+)/i);if(!m)continue;for(const x of m[1].matchAll(/\$([0-9a-f]{1,2})/ig))out.push(parseInt(x[1],16));}return Uint8Array.from(out)}
+function parseFrameTable(text){
+  const rows=[];
+  for(const line of text.split(/\r?\n/)){
+    if(!/!byte/i.test(line) || !/FRAME_\d+_MAP/i.test(line))continue;
+    const m=line.match(/!byte\s+\$([0-9a-f]{2}),<FRAME_(\d+)_MAP,>FRAME_\d+_MAP,\$([0-9a-f]{2}),\$([0-9a-f]{2}),<FRAME_\d+_COLORS,>FRAME_\d+_COLORS,\$([0-9a-f]{2}),\$([0-9a-f]{2}),\$([0-9a-f]{2}),\$([0-9a-f]{2})/i);
+    if(!m)continue;
+    rows.push({index:+m[2],mapType:parseInt(m[1],16),delay:parseInt(m[3],16),colorType:parseInt(m[4],16),bg:[5,6,7,8].map(i=>parseInt(m[i],16))});
+  }
+  rows.sort((a,b)=>a.index-b.index); return rows;
+}
+function decodeFullMap(bytes){if(bytes.length<1000)throw new Error(`FULL map corto: ${bytes.length} bytes; se esperaban 1000.`);return Uint8Array.from(bytes.slice(0,1000));}
+function applyChanges(previous, bytes, label){const out=Uint8Array.from(previous);let pos=0,i=0,pairs=0;while(i<bytes.length){const off=bytes[i++];if(pairs>0 && off===0)return out;if(i>=bytes.length)throw new Error(`${label}: CHANGES termina después de offset sin valor.`);pos+=off;if(pos<0||pos>=1000)throw new Error(`${label}: CHANGES intenta escribir posición ${pos}, fuera de 0..999.`);out[pos]=bytes[i++];pairs++;if(pairs>2000)throw new Error(`${label}: CHANGES sin terminador.`);}throw new Error(`${label}: CHANGES no contiene terminador 00.`)}
+function decodeRLE(bytes,label){const out=[];let i=0;while(i<bytes.length){const count=bytes[i++];if(count===0)break;if(i>=bytes.length)throw new Error(`${label}: RLE sin valor después de count.`);const val=bytes[i++];for(let j=0;j<count;j++)out.push(val);if(out.length>1000)throw new Error(`${label}: RLE excede 1000 celdas.`);}if(out.length!==1000)throw new Error(`${label}: RLE reconstruyó ${out.length} celdas; se esperaban 1000.`);return Uint8Array.from(out)}
+function decodeFullColor(bytes,label){if(bytes.length<1000)throw new Error(`${label}: FULL color corto (${bytes.length}); se esperaban 1000 bytes de layout LVLLVL.`);const out=new Uint8Array(1000);for(let row=0;row<25;row++){const base=row*40;for(let y=0;y<40;y+=2){const b=bytes[base+y];out[base+y]=b&15;out[base+y+1]=(b>>4)&15;}}return out}
+function typeName(t){return t===1?'FULL':t===2?'CHANGES':t===3?'RLE':`UNKNOWN ${t}`}
+function parseAnimated(bytes){const entries=[];for(let i=0;i<bytes.length;){if(bytes[i]===0)break;if(i+8>=bytes.length)break;entries.push({ticks:bytes[i],counter:bytes[i+1],charOffset:bytes[i+2]|(bytes[i+3]<<8),type:bytes[i+4],frameCount:bytes[i+5],current:bytes[i+6],dataPtr:bytes[i+7]|(bytes[i+8]<<8)});i+=9;}return entries}
+function animatedType(t){return ['LEFT','RIGHT','UP','DOWN','BLINK','FRAMES'][t]||`TYPE_${t}`}
+function sum(a){return a.reduce((x,y)=>x+y,0)}
+
+function bytesEqual(a,b){if(a.length!==b.length)return false;for(let i=0;i<a.length;i++)if(a[i]!==b[i])return false;return true}
+function write16(a,o,v){a[o]=v&255;a[o+1]=(v>>>8)&255}
+function write32(a,o,v){v=v>>>0;a[o]=v&255;a[o+1]=(v>>>8)&255;a[o+2]=(v>>>16)&255;a[o+3]=(v>>>24)&255}
+function concatBytes(parts){const n=parts.reduce((s,x)=>s+x.length,0),o=new Uint8Array(n);let p=0;for(const x of parts){o.set(x,p);p+=x.length}return o}
+function packFullColor(color){const o=new Uint8Array(500);for(let i=0;i<500;i++)o[i]=(color[i*2]&15)|((color[i*2+1]&15)<<4);return o}
+function unpackFullColor(data){if(data.length!==500)throw new Error(`FULL4 color inválido: ${data.length} bytes`);const o=new Uint8Array(1000);for(let i=0;i<500;i++){o[i*2]=data[i]&15;o[i*2+1]=(data[i]>>4)&15}return o}
+function encodeDeltaV1(prev,curr){const changes=[];for(let i=0;i<1000;i++)if(prev[i]!==curr[i])changes.push(i);const out=[changes.length&255,(changes.length>>>8)&255];let last=-1;for(const idx of changes){let gap=idx-last-1;while(gap>=255){out.push(255);gap-=255}out.push(gap,curr[idx]);last=idx}return Uint8Array.from(out)}
+function decodeDeltaV1(prev,data){if(data.length<2)throw new Error('DELTA V1 corto');const count=data[0]|(data[1]<<8),o=Uint8Array.from(prev);let p=2,last=-1;for(let n=0;n<count;n++){let gap=0,b;do{if(p>=data.length)throw new Error('DELTA V1 truncado');b=data[p++];gap+=b}while(b===255);const idx=last+1+gap;if(idx<0||idx>=1000||p>=data.length)throw new Error('DELTA V1 fuera de rango');o[idx]=data[p++];last=idx}if(p!==data.length)throw new Error('DELTA V1 contiene bytes sobrantes');return o}
+function encodeRLEV1(curr){const out=[];let i=0;while(i<curr.length){const val=curr[i];let j=i+1;while(j<curr.length&&curr[j]===val&&j-i<255)j++;out.push(j-i,val);i=j}return Uint8Array.from(out)}
+function decodeRLEV1(data){if(data.length%2)throw new Error('RLE V1 impar');const out=[];for(let i=0;i<data.length;i+=2){const n=data[i],v=data[i+1];if(!n)throw new Error('RLE V1 count cero');for(let j=0;j<n;j++)out.push(v);if(out.length>1000)throw new Error('RLE V1 excede 1000')}if(out.length!==1000)throw new Error(`RLE V1 reconstruyó ${out.length}`);return Uint8Array.from(out)}
+function encodeBitmapDelta(prev,curr){const n=curr.length,bmBytes=Math.ceil(n/8),bm=new Uint8Array(bmBytes),vals=[];for(let i=0;i<n;i++)if(prev[i]!==curr[i]){bm[i>>3]|=1<<(i&7);vals.push(curr[i])}return concatBytes([bm,Uint8Array.from(vals)])}
+function decodeBitmapDelta(prev,data,expected){const bmBytes=Math.ceil(expected/8);if(data.length<bmBytes)throw new Error('BITMAP_DELTA corto');const o=Uint8Array.from(prev);let p=bmBytes;for(let i=0;i<expected;i++)if(data[i>>3]&(1<<(i&7))){if(p>=data.length)throw new Error('BITMAP_DELTA truncado');o[i]=data[p++]}if(p!==data.length)throw new Error('BITMAP_DELTA contiene bytes sobrantes');return o}
+function chooseSmallest(options){const pri={BITMAP_DELTA:0,PACKED_BITMAP_DELTA:0,DELTA:1,RLE:2,FULL:3};return options.slice().sort((a,b)=>a.data.length-b.data.length||(pri[a.name]??9)-(pri[b.name]??9))[0]}
+function scummTypeCode(name){return name==='FULL'?1:name==='DELTA'?2:name==='RLE'?3:(name==='BITMAP_DELTA'||name==='PACKED_BITMAP_DELTA')?4:0}
+const SCUMM_FRAMEPACK_BUDGET=18688,SCUMM_GRAPHIC_BUDGET=20736;
+function colorDiagnostics(frames){
+  const perFrame=frames.map((f,i)=>{let c1=0,c2=0;for(const v of f.color){if(v===1)c1++;else if(v===2)c2++;}return {frame:i+1,color01:c1,color02:c2,total:c1+c2};});
+  return {perFrame,total01:perFrame.reduce((a,x)=>a+x.color01,0),total02:perFrame.reduce((a,x)=>a+x.color02,0),affectedFrames:perFrame.filter(x=>x.total>0).length};
+}
+function applyColorPolicy(frames,policy){
+  return frames.map(f=>{const c=Uint8Array.from(f.color);if(policy===COLOR_POLICY_RED)for(let i=0;i<c.length;i++)if(c[i]===2)c[i]=12;return {...f,color:c};});
+}
+function applyAnalysisColorPolicy(a,policy){
+  a.colorPolicy=policy;a.activeFrames=applyColorPolicy(a.frames,policy);
+  a.colorReplacements=policy===COLOR_POLICY_RED?a.colorDiagnostics.total02:0;
+  a.scumm=buildScummV2(a.activeFrames,a.charset,a.errors,a.animated.length);
+}
+function buildScummV2(frames,charset,blockingErrors,animatedCount){
+  const errors=[],packed=[];let prevMap=null,prevColor=null,totalPayload=0;
+  if(blockingErrors.length)errors.push('El importador LVLLVL contiene errores.');
+  if(animatedCount)errors.push('Animated Chars todavía no forman parte de SCUMM_ANIMATION_V2.');
+  if(frames.length<2||frames.length>16)errors.push('ANIMATION V2 requiere 2..16 frames.');
+  if(charset.length!==2048)errors.push('Charset debe medir 2048 bytes.');
+  for(let i=0;i<frames.length;i++){
+    const f=frames[i];let mapChoice,colorChoice;
+    if(i===0){mapChoice={name:'FULL',data:Uint8Array.from(f.map)};colorChoice={name:'FULL',data:packFullColor(f.color)}}
+    else{
+      const prevPacked=packFullColor(prevColor),currPacked=packFullColor(f.color);
+      mapChoice=chooseSmallest([
+        {name:'FULL',data:Uint8Array.from(f.map)},
+        {name:'DELTA',data:encodeDeltaV1(prevMap,f.map)},
+        {name:'RLE',data:encodeRLEV1(f.map)},
+        {name:'BITMAP_DELTA',data:encodeBitmapDelta(prevMap,f.map)}
+      ]);
+      colorChoice=chooseSmallest([
+        {name:'FULL',data:currPacked},
+        {name:'DELTA',data:encodeDeltaV1(prevColor,f.color)},
+        {name:'RLE',data:encodeRLEV1(f.color)},
+        {name:'PACKED_BITMAP_DELTA',data:encodeBitmapDelta(prevPacked,currPacked)}
+      ]);
+    }
+    try{
+      const rm=mapChoice.name==='FULL'?Uint8Array.from(mapChoice.data):mapChoice.name==='DELTA'?decodeDeltaV1(prevMap,mapChoice.data):mapChoice.name==='RLE'?decodeRLEV1(mapChoice.data):decodeBitmapDelta(prevMap,mapChoice.data,1000);
+      let rc;if(colorChoice.name==='FULL')rc=unpackFullColor(colorChoice.data);else if(colorChoice.name==='DELTA')rc=decodeDeltaV1(prevColor,colorChoice.data);else if(colorChoice.name==='RLE')rc=decodeRLEV1(colorChoice.data);else rc=unpackFullColor(decodeBitmapDelta(packFullColor(prevColor),colorChoice.data,500));
+      if(!bytesEqual(rm,f.map))throw new Error('map round-trip distinto');
+      if(!bytesEqual(rc,f.color))throw new Error('color round-trip distinto');
+    }catch(e){errors.push(`Frame ${i+1}: ${e.message}`)}
+    packed.push({index:i,mapType:mapChoice.name,mapData:mapChoice.data,colorType:colorChoice.name,colorData:colorChoice.data,delay:f.delay,bg:f.bg});
+    totalPayload+=mapChoice.data.length+colorChoice.data.length;prevMap=f.map;prevColor=f.color;
+  }
+  const headerSize=32,entrySize=16,tableSize=packed.length*entrySize,dataOffset=headerSize+tableSize;
+  if(totalPayload>65535)errors.push('Payload excede offsets de 16 bits.');
+  const fp=new Uint8Array(dataOffset+totalPayload);fp.set([0x53,0x41,0x4e,0x32],0);fp[4]=2;fp[5]=packed.length;fp[6]=40;fp[7]=25;write16(fp,8,headerSize);write16(fp,10,dataOffset);write16(fp,12,entrySize);fp[14]=3;fp[15]=0;write16(fp,16,totalPayload);write16(fp,18,charset.length);write16(fp,20,SCUMM_FRAMEPACK_BUDGET);
+  let dp=0;
+  for(let i=0;i<packed.length;i++){
+    const q=packed[i],eo=headerSize+i*entrySize;q.mapOffset=dp;fp.set(q.mapData,dataOffset+dp);dp+=q.mapData.length;q.colorOffset=dp;fp.set(q.colorData,dataOffset+dp);dp+=q.colorData.length;
+    fp[eo]=scummTypeCode(q.mapType);fp[eo+1]=scummTypeCode(q.colorType);fp[eo+2]=q.delay&255;fp[eo+3]=q.bg[0]&15;fp[eo+4]=q.bg[1]&15;fp[eo+5]=q.bg[2]&15;fp[eo+6]=q.bg[3]&15;fp[eo+7]=0;write16(fp,eo+8,q.mapOffset);write16(fp,eo+10,q.mapData.length);write16(fp,eo+12,q.colorOffset);write16(fp,eo+14,q.colorData.length);
+  }
+  const memoryPass=fp.length<=SCUMM_FRAMEPACK_BUDGET && fp.length+charset.length<=SCUMM_GRAPHIC_BUDGET;
+  if(!memoryPass)errors.push(`MEMORY FAIL: framepack ${fp.length} B excede presupuesto ${SCUMM_FRAMEPACK_BUDGET} B.`);
+  return {ready:errors.length===0,errors,frames:packed,framepack:fp,payloadBytes:totalPayload,tableBytes:tableSize,headerBytes:headerSize,totalBytes:fp.length+charset.length,framepackBytes:fp.length,memoryPass,framepackBudget:SCUMM_FRAMEPACK_BUDGET,graphicBudget:SCUMM_GRAPHIC_BUDGET,freeFramepackBytes:SCUMM_FRAMEPACK_BUDGET-fp.length,freeGraphicBytes:SCUMM_GRAPHIC_BUDGET-(fp.length+charset.length)};
+}
+function safeName(s){return String(s||'resource').replace(/\.zip$/i,'').replace(/[^a-z0-9_-]+/ig,'_').replace(/^_+|_+$/g,'')||'resource'}
+function scummManifest(a){const s=a.scumm;return {format:'SCUMM_ANIMATION_V2',version:2,engine_profile:'ANIMATION_16F_V2E',resource_type:'ANIMATION',source:a.fileName,width:40,height:25,frame_count:a.frameCount,color_policy:{mode:a.colorPolicy||COLOR_POLICY_PRESERVE,replacements:a.colorReplacements||0,source_color01:a.colorDiagnostics?.total01||0,source_color02:a.colorDiagnostics?.total02||0,preserve_color01:true,remap:(a.colorPolicy===COLOR_POLICY_RED)?{'$02':'$0C'}:{}},engine_contract:{double_buffer_screen:true,screen_delta_base:'previous_visible_frame_N-1',front_to_back_copy_before_map_delta:true,bitmap_delta_fast_zero_byte_skip_cells:8,presentation_order:['screen_swap','color_ram_update'],color_ram_double_buffered:false,disable_DEN_for_transition:false,forbidden_delta_base:'N-2'},charset:{file:'charset.bin',bytes:a.charsetBytes},framepack:{file:'framepack.bin',bytes:s.framepackBytes,header_bytes:s.headerBytes,table_entry_bytes:16,payload_bytes:s.payloadBytes},compression:{map_types:{FULL:1,DELTA:2,RLE:3,BITMAP_DELTA:4},color_types:{FULL4:1,DELTA:2,RLE:3,PACKED_BITMAP_DELTA:4},delta:'u16 change_count + variable gap (255 continuation) + value',rle:'count,value pairs',bitmap_delta:'125-byte bitmap + changed screen values; compare against N-1 after front-to-back copy',packed_bitmap_delta:'63-byte bitmap over 500 packed-color bytes + changed packed bytes',whole_frame_dedup:false,frame0:'forced FULL map + FULL4 color'},memory:{framepack_budget:s.framepackBudget,graphic_budget:s.graphicBudget,memory_pass:s.memoryPass,framepack_free_bytes:s.freeFramepackBytes,graphic_free_bytes:s.freeGraphicBytes},frames:s.frames.map(f=>({frame:f.index,map_type:f.mapType,map_bytes:f.mapData.length,map_changed_cells:f.mapType==='BITMAP_DELTA'?Math.max(0,f.mapData.length-125):null,color_type:f.colorType==='FULL'?'FULL4':f.colorType,color_bytes:f.colorData.length,delay:f.delay,bg:f.bg}))}}
+let crcTable=null;function crc32(data){if(!crcTable){crcTable=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=(c&1)?(0xedb88320^(c>>>1)):(c>>>1);crcTable[n]=c>>>0}}let c=0xffffffff;for(const b of data)c=crcTable[(c^b)&255]^(c>>>8);return (c^0xffffffff)>>>0}
+function zipStore(entries){const te=new TextEncoder(),locals=[],centrals=[];let offset=0;const d=new Date(),dosTime=((d.getHours()&31)<<11)|((d.getMinutes()&63)<<5)|((d.getSeconds()>>1)&31),dosDate=(((Math.max(1980,d.getFullYear())-1980)&127)<<9)|(((d.getMonth()+1)&15)<<5)|(d.getDate()&31);
+  for(const e of entries){const name=te.encode(e.name),data=e.data instanceof Uint8Array?e.data:new Uint8Array(e.data),crc=crc32(data),lh=new Uint8Array(30+name.length);write32(lh,0,0x04034b50);write16(lh,4,20);write16(lh,6,0x0800);write16(lh,8,0);write16(lh,10,dosTime);write16(lh,12,dosDate);write32(lh,14,crc);write32(lh,18,data.length);write32(lh,22,data.length);write16(lh,26,name.length);write16(lh,28,0);lh.set(name,30);locals.push(lh,data);
+    const ch=new Uint8Array(46+name.length);write32(ch,0,0x02014b50);write16(ch,4,20);write16(ch,6,20);write16(ch,8,0x0800);write16(ch,10,0);write16(ch,12,dosTime);write16(ch,14,dosDate);write32(ch,16,crc);write32(ch,20,data.length);write32(ch,24,data.length);write16(ch,28,name.length);write16(ch,30,0);write16(ch,32,0);write16(ch,34,0);write16(ch,36,0);write32(ch,38,0);write32(ch,42,offset);ch.set(name,46);centrals.push(ch);offset+=lh.length+data.length}
+  const local=concatBytes(locals),central=concatBytes(centrals),eo=new Uint8Array(22);write32(eo,0,0x06054b50);write16(eo,4,0);write16(eo,6,0);write16(eo,8,entries.length);write16(eo,10,entries.length);write32(eo,12,central.length);write32(eo,16,local.length);write16(eo,20,0);return concatBytes([local,central,eo])}
+function formatText(){return `SCUMM_ANIMATION_V2 · ENGINE PROFILE V2E
+=========================================
+
+RESOURCE TYPE: ANIMATION_16F
+Canvas: 40x25 character cells
+Maximum frames: 16
+Charset: charset.bin (2048 bytes)
+Frame data: framepack.bin
+Framepack memory budget: 18688 bytes ($4400-$8CFF)
+Graphic total budget incl. charset: 20736 bytes
+Whole-frame deduplication: OFF
+
+RUNTIME CONTRACT V2E (VALIDATED)
+1. Screen delta base is the immediately previous visible frame N-1.
+2. Before decoding a screen delta, copy the visible screen to the hidden buffer (front -> back).
+3. BITMAP_DELTA decoder must implement the fast path: bitmap byte $00 skips 8 destination cells.
+4. Finish the hidden screen first, then PRESENT in this order: SCREEN SWAP -> COLOR RAM UPDATE.
+5. Color RAM is not double-buffered.
+6. Do NOT blank DEN for the transition.
+7. Do NOT encode screen deltas against N-2.
+
+FRAMEPACK HEADER (32 bytes)
+0..3  ASCII SAN2
+4     version = 2
+5     frame count
+6     width = 40
+7     height = 25
+8..9  table offset (LE)
+10..11 data offset (LE)
+12..13 frame entry size = 16 (LE)
+14    flags = 3 (packed color + bitmap delta support)
+16..17 payload bytes (LE)
+18..19 charset bytes (LE)
+20..21 framepack budget (LE)
+
+FRAME ENTRY (16 bytes)
+0 map type: 1 FULL, 2 DELTA, 3 RLE, 4 BITMAP_DELTA
+1 color type: 1 FULL4, 2 DELTA, 3 RLE, 4 PACKED_BITMAP_DELTA
+2 delay
+3..6 BG values
+8..9 map offset relative to data section
+10..11 map size
+12..13 color offset relative to data section
+14..15 color size
+
+BITMAP_DELTA (MAP)
+125-byte bitmap for 1000 cells, LSB-first. A set bit means consume one new screen byte. Compare against Frame N-1. Runtime prerequisite: front->back copy before decoder. Fast-path required: bitmap byte $00 advances 8 cells.
+
+PACKED_BITMAP_DELTA (COLOR)
+Colors are packed 2 nibbles per byte (500 bytes). A 63-byte bitmap marks changed packed bytes, followed by changed values. Compare against previous Color RAM state. Runtime presentation order: screen swap first, Color RAM second.
+
+COLOR POLICY
+Preserve source by default. Optional explicit HALITO-compatible remap: $02 -> $0C. $01 is valid white and MUST remain unchanged. The selected remap is recorded in resource.json/report.json.
+
+Frame 1 is forced FULL map + FULL4 color. Later frames choose the smallest generic codec. No whole-frame deduplication or distant-frame references are used. Every encoded block is decoded again and compared byte-for-byte before READY. The fixed bank budget is never reduced even when the resource compresses better.
+`}
+function engineV2EText(){return `ANIMATION_16F_V2E\n==================\n\nValidated runtime contract:\n- screen delta base: previous visible frame N-1\n- copy front -> back before applying map delta\n- BITMAP_DELTA fast path: bitmap byte $00 skips 8 cells\n- presentation order: SCREEN SWAP -> COLOR RAM UPDATE\n- Color RAM is not double-buffered\n- do not blank DEN\n- do not use N-2 deltas\n\nColor remaps are explicit resource metadata; $01 is valid white.\n`}
+function buildScummZip(a){const te=new TextEncoder(),manifest=scummManifest(a),report=reportObject(a),entries=[{name:'charset.bin',data:a.charset},{name:'framepack.bin',data:a.scumm.framepack},{name:'resource.json',data:te.encode(JSON.stringify(manifest,null,2))},{name:'report.json',data:te.encode(JSON.stringify(report,null,2))},{name:'FORMAT.txt',data:te.encode(formatText())},{name:'ENGINE_V2E.txt',data:te.encode(engineV2EText())}];return zipStore(entries)}
+function downloadBytes(bytes,name,type='application/octet-stream'){const blob=new Blob([bytes],{type}),u=URL.createObjectURL(blob),a=document.createElement('a');a.href=u;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(u),1000)}
+
+
+async function analyze(file){
+  const files=await unzipLocal(file), frameTable=findFile(files,'data/frameTable.asm'), charsetF=findFile(files,'data/charset.asm');
+  if(!frameTable)throw new Error('No encuentro data/frameTable.asm. Este ZIP no parece una exportación C64 NEW compatible.');
+  if(!charsetF)throw new Error('No encuentro data/charset.asm.');
+  const rows=parseFrameTable(textOf(frameTable));
+  if(!rows.length)throw new Error('frameTable.asm existe pero no pude detectar frames.');
+  const warnings=[], errors=[];
+  if(rows.length>16)errors.push(`Se detectaron ${rows.length} frames. ANIMATION admite máximo 16.`);
+  const contiguous=rows.every((r,i)=>r.index===i);if(!contiguous)errors.push('Los índices de frame no son consecutivos desde 0.');
+  const charset=parseAsmBytes(textOf(charsetF));if(charset.length!==2048)errors.push(`Charset de ${charset.length} bytes; se esperaban 2048.`);
+  const frames=[]; let prevMap=null, prevColor=null, mapSourceBytes=0,colorSourceBytes=0;
+  for(const row of rows){
+    const mf=findFile(files,`data/frame_${row.index}_map.asm`), cf=findFile(files,`data/frame_${row.index}_colors.asm`);
+    if(!mf){errors.push(`Falta frame_${row.index}_map.asm`);continue}if(!cf){errors.push(`Falta frame_${row.index}_colors.asm`);continue}
+    const mb=parseAsmBytes(textOf(mf)), cb=parseAsmBytes(textOf(cf));mapSourceBytes+=mb.length;colorSourceBytes+=cb.length;
+    let map,color;
+    try{
+      if(row.mapType===1)map=decodeFullMap(mb); else if(row.mapType===2){if(!prevMap)throw new Error('CHANGES sin frame anterior.');map=applyChanges(prevMap,mb,`Frame ${row.index} map`)} else if(row.mapType===3)map=decodeRLE(mb,`Frame ${row.index} map`); else throw new Error(`tipo map ${row.mapType} no soportado.`);
+    }catch(e){errors.push(`Frame ${row.index} map: ${e.message}`);map=new Uint8Array(1000)}
+    try{
+      if(row.colorType===1)color=decodeFullColor(cb,`Frame ${row.index} color`); else if(row.colorType===2){if(!prevColor)throw new Error('CHANGES color sin frame anterior.');color=applyChanges(prevColor,cb,`Frame ${row.index} color`)} else throw new Error(`tipo color ${row.colorType} no soportado.`);
+    }catch(e){errors.push(`Frame ${row.index} color: ${e.message}`);color=new Uint8Array(1000)}
+    frames.push({...row,map,color,mapBytes:mb.length,colorBytes:cb.length});prevMap=map;prevColor=color;
+  }
+  const animF=findFile(files,'data/animatedCharsTable.asm'), animDataF=findFile(files,'data/animatedCharsData.asm');
+  const animated=animF?parseAnimated(parseAsmBytes(textOf(animF))):[];
+  if(animated.length)warnings.push(`Se detectaron ${animated.length} Animated Chars. Se informan, pero el preview V0.10 todavía no anima el charset en tiempo real.`);
+  const rleCount=rows.filter(r=>r.mapType===3).length;if(!rleCount)warnings.push('Este sample no usa RLE real; el decoder RLE queda implementado pero aún no validado con un golden sample LVLLVL que lo use.');
+  const unknownMap=rows.filter(r=>![1,2,3].includes(r.mapType));if(unknownMap.length)errors.push('Hay tipos de mapa desconocidos.');
+  const unknownCol=rows.filter(r=>![1,2].includes(r.colorType));if(unknownCol.length)errors.push('Hay tipos de color desconocidos.');
+  const colorDiag=colorDiagnostics(frames);if(colorDiag.total01||colorDiag.total02)warnings.push(`Color source contiene $01=${colorDiag.total01} y $02=${colorDiag.total02} en ${colorDiag.affectedFrames} frame(s). Revisar si son intencionales o aplicar sanitización gris.`);
+  const type=(rows.length>=2&&rows.length<=16)?'ANIMATION':'UNSUPPORTED';
+  const status=errors.length?'FAIL':warnings.length?'PASS_WITH_WARNINGS':'PASS';
+  const rawCanonical=rows.length*2000+2048, sourceTotal=mapSourceBytes+colorSourceBytes+charset.length;
+  const animCounts={};for(const e of animated)animCounts[animatedType(e.type)]=(animCounts[animatedType(e.type)]||0)+1;
+  const result={fileName:file.name,status,type,errors,warnings,frameCount:rows.length,charsetBytes:charset.length,frames,charset,animated,animCounts,animatedDataBytes:animDataF?parseAsmBytes(textOf(animDataF)).length:0,mapSourceBytes,colorSourceBytes,sourceTotal,rawCanonical,compressionSaving:rawCanonical?1-sourceTotal/rawCanonical:0,filesCount:files.size,colorDiagnostics:colorDiag,colorPolicy:COLOR_POLICY_PRESERVE,colorReplacements:0};
+  applyAnalysisColorPolicy(result,COLOR_POLICY_PRESERVE);
+  return result;
+}
+
+function renderFrame(a,idx){
+  const rf=a?.activeFrames||a?.frames;if(!a||!rf||!rf[idx])return;currentFrame=idx;const f=rf[idx],c=$('#screen'),ctx=c.getContext('2d'),img=ctx.createImageData(320,200),bg=palette[f.bg[0]&15];
+  for(let cy=0;cy<25;cy++)for(let cx=0;cx<40;cx++){
+    const cell=cy*40+cx, code=f.map[cell], fg=palette[f.color[cell]&15];
+    for(let py=0;py<8;py++){const bits=a.charset[code*8+py]||0;for(let px=0;px<8;px++){const on=(bits&(0x80>>px))!==0,col=on?fg:bg,pi=((cy*8+py)*320+(cx*8+px))*4;img.data[pi]=col[0];img.data[pi+1]=col[1];img.data[pi+2]=col[2];img.data[pi+3]=255;}}
+  }
+  ctx.putImageData(img,0,0);$('#frameSlider').value=idx;$('#frameLabel').textContent=`Frame ${idx+1}/${a.frameCount}`;
+}
+function fmt(n){return new Intl.NumberFormat('es-AR').format(n)}
+function render(a){
+  currentAnalysis=a;$('#results').classList.remove('hidden');
+  const sv=$('#statusValue');sv.textContent=a.status;sv.className='v '+(a.status==='PASS'?'status-ok':a.status==='PASS_WITH_WARNINGS'?'status-warn':'status-bad');
+  $('#typeValue').textContent=a.type;$('#framesValue').textContent=a.frameCount;$('#charsetValue').textContent=`${a.charsetBytes} B`;
+  const msg=$('#messages');msg.innerHTML='';if(!a.errors.length)msg.insertAdjacentHTML('beforeend','<div class="okbox">Reconstrucción de screen/color: PASS</div>');for(const e of a.errors)msg.insertAdjacentHTML('beforeend',`<div class="errbox">${escapeHtml(e)}</div>`);for(const w of a.warnings)msg.insertAdjacentHTML('beforeend',`<div class="warnbox">${escapeHtml(w)}</div>`);
+  $('#sizeStats').innerHTML=`<tr><th>Map data LVLLVL</th><td>${fmt(a.mapSourceBytes)} B</td></tr><tr><th>Color data LVLLVL</th><td>${fmt(a.colorSourceBytes)} B</td></tr><tr><th>Charset</th><td>${fmt(a.charsetBytes)} B</td></tr><tr><th>Total source gráfico</th><td>${fmt(a.sourceTotal)} B</td></tr><tr><th>Canónico RAW equivalente</th><td>${fmt(a.rawCanonical)} B</td></tr><tr><th>Reducción source vs RAW</th><td>${(a.compressionSaving*100).toFixed(1)}%</td></tr>`;
+  const tb=$('#framesTable');tb.innerHTML='';for(const f of a.frames){tb.insertAdjacentHTML('beforeend',`<tr><td>${f.index+1}</td><td><span class="pill ${typeName(f.mapType).toLowerCase()}">${typeName(f.mapType)}</span></td><td>${f.mapBytes}</td><td><span class="pill ${typeName(f.colorType).toLowerCase()}">${typeName(f.colorType)}</span></td><td>${f.colorBytes}</td><td>${f.delay}</td><td>${f.bg.map(x=>x.toString(16).toUpperCase()).join('/')}</td></tr>`)}
+  const cd=a.colorDiagnostics,policy=a.colorPolicy||COLOR_POLICY_PRESERVE,repl=a.colorReplacements||0;$('#colorPolicy').value=policy;const affected=cd.perFrame.filter(x=>x.total>0).map(x=>`F${x.frame}: $01=${x.color01}, $02=${x.color02}`).join(' · ');$('#colorStats').innerHTML=(cd.total01||cd.total02)?`<div class="${cd.total02?'warnbox':'okbox'}"><b>Diagnóstico Color RAM</b><br>$01 blanco: ${cd.total01} · $02 rojo: ${cd.total02} · Frames con $01/$02: ${cd.affectedFrames}/${a.frameCount}</div><div class="small">${escapeHtml(affected)}</div><div class="${policy===COLOR_POLICY_RED?'okbox':(cd.total02?'warnbox':'okbox')}" style="margin-top:8px">Política activa: <b>${policy===COLOR_POLICY_RED?'REMAP $02 → $0C · $01 PRESERVADO':'PRESERVAR SOURCE'}</b>${policy===COLOR_POLICY_RED?` · ${repl} celdas rojas normalizadas.`:''}</div>`:'<div class="okbox">No se detectaron $01/$02 en Color RAM.</div>';
+  const ac=Object.entries(a.animCounts).map(([k,v])=>`<span class="pill">${k}: ${v}</span>`).join(' ');$('#animatedStats').innerHTML=a.animated.length?`<p><b>${a.animated.length}</b> entradas detectadas.</p><p>${ac}</p><p class="small">AnimatedCharsData: ${a.animatedDataBytes} bytes.</p>`:'<div class="okbox">No se detectaron Animated Chars.</div>';
+  const sr=$('#scummReady');sr.innerHTML=a.scumm.ready?`<div class="okbox"><b>READY FOR SCUMM V2E</b> · Round-trip: PASS · MEMORY PASS · ${fmt(a.scumm.freeFramepackBytes)} B libres</div>`:`<div class="errbox"><b>NOT READY</b><br>${a.scumm.errors.map(escapeHtml).join('<br>')}</div>`;
+  $('#downloadScumm').disabled=!a.scumm.ready;
+  $('#scummStats').innerHTML=`<tr><th>Source gráfico LVLLVL</th><td>${fmt(a.sourceTotal)} B</td></tr><tr><th>SCUMM framepack</th><td><b>${fmt(a.scumm.framepackBytes)} B</b></td></tr><tr><th>Presupuesto framepack</th><td>${fmt(a.scumm.framepackBudget)} B</td></tr><tr><th>Libre en ventana</th><td class="${a.scumm.memoryPass?'status-ok':'status-bad'}"><b>${fmt(a.scumm.freeFramepackBytes)} B</b></td></tr><tr><th>Charset</th><td>${fmt(a.charsetBytes)} B</td></tr><tr><th>SCUMM total gráfico</th><td><b>${fmt(a.scumm.totalBytes)} B</b> / ${fmt(a.scumm.graphicBudget)} B</td></tr><tr><th>Ahorro vs source</th><td>${((1-a.scumm.totalBytes/a.sourceTotal)*100).toFixed(1)}%</td></tr><tr><th>Ahorro vs RAW canónico</th><td>${((1-a.scumm.totalBytes/a.rawCanonical)*100).toFixed(1)}%</td></tr>`;
+  $('#scummFramesTable').innerHTML=a.scumm.frames.map(f=>`<tr><td>${f.index+1}</td><td><span class="pill ${f.mapType.toLowerCase()}">${f.mapType}</span></td><td>${f.mapData.length}</td><td><span class="pill ${f.colorType.toLowerCase()}">${f.colorType==='FULL'?'FULL4':f.colorType}</span></td><td>${f.colorData.length}</td></tr>`).join('');
+  $('#frameSlider').max=Math.max(0,a.frameCount-1);renderFrame(a,0);
+  const report=reportObject(a);$('#technical').textContent=JSON.stringify(report,null,2);
+}
+function reportObject(a){return {tool:'LVLLVL_SCUMM_RESOURCE_BUILDER',version:'0.40',input:a.fileName,status:a.status,resource_type:a.type,frames:a.frameCount,color_policy:{mode:a.colorPolicy||COLOR_POLICY_PRESERVE,replacements:a.colorReplacements||0,source_color01:a.colorDiagnostics?.total01||0,source_color02:a.colorDiagnostics?.total02||0,per_frame:a.colorDiagnostics?.perFrame||[]},charset_bytes:a.charsetBytes,map_source_bytes:a.mapSourceBytes,color_source_bytes:a.colorSourceBytes,source_graphic_total:a.sourceTotal,canonical_raw_total:a.rawCanonical,source_reduction_percent:+(a.compressionSaving*100).toFixed(2),animated_chars:{count:a.animated.length,types:a.animCounts,data_bytes:a.animatedDataBytes},warnings:a.warnings,errors:a.errors,lvllvl_frame_table:a.frames.map(f=>({frame:f.index,map_type:typeName(f.mapType),map_bytes:f.mapBytes,color_type:typeName(f.colorType),color_bytes:f.colorBytes,delay:f.delay,bg:f.bg})),scumm_v2e:{ready:a.scumm.ready,errors:a.scumm.errors,total_bytes:a.scumm.totalBytes,framepack_bytes:a.scumm.framepackBytes,payload_bytes:a.scumm.payloadBytes,format:scummManifest(a)}}}
+function escapeHtml(s){return String(s).replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]))}
+async function handleFile(file){if(!file)return;$('#loading').classList.remove('hidden');$('#results').classList.add('hidden');stopPlay();try{const a=await analyze(file);render(a)}catch(e){currentAnalysis=null;$('#results').classList.remove('hidden');$('#messages').innerHTML=`<div class="errbox">${escapeHtml(e.message||e)}</div>`;$('#statusValue').textContent='FAIL';$('#statusValue').className='v status-bad';$('#typeValue').textContent='—';$('#framesValue').textContent='—';$('#charsetValue').textContent='—';$('#technical').textContent=String(e.stack||e)}finally{$('#loading').classList.add('hidden')}}
+function stopPlay(){if(playTimer){clearTimeout(playTimer);playTimer=null}$('#playBtn').textContent='▶ Reproducir'}
+function schedule(){if(!currentAnalysis)return;const f=currentAnalysis.frames[currentFrame],ms=Math.max(60,(f.delay||1)*20);playTimer=setTimeout(()=>{currentFrame=(currentFrame+1)%currentAnalysis.frameCount;renderFrame(currentAnalysis,currentFrame);schedule()},ms)}
+function togglePlay(){if(playTimer)stopPlay();else{$('#playBtn').textContent='■ Detener';schedule()}}
+const dz=$('#dropZone'),fi=$('#fileInput');fi.addEventListener('change',e=>handleFile(e.target.files[0]));for(const ev of ['dragenter','dragover'])dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add('drag')});for(const ev of ['dragleave','drop'])dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove('drag')});dz.addEventListener('drop',e=>handleFile(e.dataTransfer.files[0]));
+$('#frameSlider').addEventListener('input',e=>{stopPlay();renderFrame(currentAnalysis,+e.target.value)});$('#prevBtn').onclick=()=>{stopPlay();if(currentAnalysis)renderFrame(currentAnalysis,(currentFrame-1+currentAnalysis.frameCount)%currentAnalysis.frameCount)};$('#nextBtn').onclick=()=>{stopPlay();if(currentAnalysis)renderFrame(currentAnalysis,(currentFrame+1)%currentAnalysis.frameCount)};$('#playBtn').onclick=togglePlay;
+$('#colorPolicy').addEventListener('change',e=>{if(!currentAnalysis)return;stopPlay();applyAnalysisColorPolicy(currentAnalysis,e.target.value);render(currentAnalysis)});
+$('#downloadReport').onclick=()=>{if(!currentAnalysis)return;const data=new TextEncoder().encode(JSON.stringify(reportObject(currentAnalysis),null,2));downloadBytes(data,'LVLLVL_SCUMM_ANALYSIS_V040.json','application/json')};
+$('#downloadScumm').onclick=()=>{if(!currentAnalysis||!currentAnalysis.scumm.ready)return;const z=buildScummZip(currentAnalysis),name=safeName(currentAnalysis.fileName)+'_SCUMM_ANIMATION_V2E.zip';downloadBytes(z,name,'application/zip')};
+window.LVLLVL_SCUMM_TOOL={version:'0.40',engineProfile:'ANIMATION_16F_V2E',analyze,buildScummV2,buildScummZip,applyAnalysisColorPolicy,colorDiagnostics};
+})();
+</script>
+</body>
+</html>
