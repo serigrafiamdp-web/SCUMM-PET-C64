@@ -246,3 +246,38 @@ RESTAURACION MAPA VISUAL ASCII - 08/10/2026
   -> PORTADA/carga -> siguiente ANIMACION.
 - README.md incorpora un resumen ASCII del motor actual para que la portada de GitHub
   muestre la arquitectura de un vistazo.
+
+
+======================================================================
+09/10/2026 - MASTER HALITO1 AUTO/MIX + HALITO2 FRESH - PASS
+======================================================================
+HALITO1:
+- Motor RLE universal V3 validado en F01-F16.
+- AUTO/MIX final:
+  F01 RLE; F02 CHANGES; F03-F13 BITMAP_DELTA;
+  F14-F15 RLE; F16 CHANGES; loop CHANGES.
+- COLOR optimizado/cadena cerrada PASS.
+- Original SCREEN+COLOR+loop: 12340 B.
+- Final SCREEN+COLOR+loop: 7300 B.
+- Ahorro payload: 5040 B.
+- Decoder RLE residente: 41 B.
+- Ahorro fisico neto: 4999 B = 4.88 KiB (~40.5%).
+
+HALITO2:
+- Primer duplicate test FAIL: Resource02 cargaba fresco correctamente,
+  pero PrepareFreshAnimationVisual seguia interpretando F01 como RAW/FULL4.
+- FIX PASS: fresh F01 respeta los codecs actuales:
+  SCREEN RLE -> $2F70 -> $0400
+  COLOR RLE -> fresh decoder -> $D800
+- Resource02 A-D sincronizados con arquitectura final HALITO1.
+- SID2 / timing / sprites / scheduler / loop conservados PASS.
+
+MASTER:
+MASTER_SCUMM_PET_09_OCT_2026_HALITO1_AUTOMIX_HALITO2_FRESH_PASS.zip
+SHA256:
+2a84c3298f8053934db8f4ece8e1afaf48fb85a49a2bdef0768d4b818a1a2ed2
+
+SIGUIENTE FASE:
+Formalizar estos contratos en la TOOL LVLLVL normalizadora y en el export
+para que futuras animaciones entren ya comprimidas/optimizadas sin repetir
+la bateria manual de tests.
