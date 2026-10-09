@@ -51,15 +51,25 @@ INTRO CARGA (4F LEMMINGS)
 
 ## Estado estable actual
 
-**BANK16F = PASS**
+**MASTER 09/10/2026 = PASS**
+
+HALITO 1 AUTO/MIX + HALITO 2 fresh load comprimido.
 
 Snapshot exacto:
 
-`releases/BANK16F/TEST_BANK16F_POSTINTRO_CPU_FILL_8D00_8FFF.zip`
+`MASTER_SCUMM_PET_09_OCT_2026_HALITO1_AUTOMIX_HALITO2_FRESH_PASS.zip`
 
 SHA-256:
 
-`e0e7374844aedae1f01941ab4acdd89130afcd0797a7db1616e211b6d303730b`
+`2a84c3298f8053934db8f4ece8e1afaf48fb85a49a2bdef0768d4b818a1a2ed2`
+
+Estado validado:
+
+- HALITO 1: F01 RLE, F02 CHANGES, F03-F13 BITMAP_DELTA, F14-F15 RLE, F16 CHANGES.
+- COLOR: cadena optimizada y cerrada.
+- Ahorro neto HALITO 1: 4999 B = 4.88 KiB (~40.5%).
+- HALITO 2: Resource02 carga fresco desde disco y reconstruye F01 desde SCREEN RLE + COLOR RLE.
+- SID2, timing, sprites y loop: PASS.
 
 ## Reglas del repositorio
 
@@ -70,9 +80,9 @@ SHA-256:
 
 ## Estructura del repositorio
 
-- `engine/` — árbol materializado completo del MASTER BANK16F PASS.
+- `engine/` — árbol materializado histórico; el MASTER vigente se registra en `releases/` y en la documentación viva.
 - `docs/` — mapa de arquitectura y log vivo del proyecto.
-- `releases/BANK16F/` — snapshot exacto del último PASS + checksum.
+- `releases/MASTER_09_OCT_2026/` — manifiesto del MASTER PASS vigente + checksum.
 - `tools/lvllvl-normalizer/` — TOOL normalizadora web oficial del proyecto.
 - `.github/workflows/` — verificación y materialización del MASTER.
 
@@ -92,6 +102,9 @@ Perfil vigente:
 
 ## Próximo paso documentado
 
-**BANK16G** — pendiente de validación.
+Integrar en la TOOL normalizadora el contrato aprendido con HALITO 1:
 
-Objetivo: comprobar si todo `$8D00-$9FFF` es RAM reutilizable post-INTRO sin agregar un `KrillLoad` extra.
+- optimización de COLOR sobre glyphs realmente vacíos;
+- generación por Frame de RLE / BITMAP_DELTA / CHANGES;
+- selección AUTO del payload más chico;
+- export compatible con fresh load, respetando el codec real de Frame01.
