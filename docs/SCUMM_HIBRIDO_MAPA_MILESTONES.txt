@@ -443,3 +443,40 @@ PENDIENTE INMEDIATO:
 ======================================================================
 FIN DEL MAPA ACTUAL
 ======================================================================
+
+
+======================================================================
+MASTER PASS - 09/10/2026
+HALITO1 AUTO/MIX + HALITO2 FRESH RESOURCE
+======================================================================
+HALITO1:
+  F01  RLE boot
+  F02  CHANGES
+  F03-F13 BITMAP_DELTA
+  F14-F15 RLE
+  F16  CHANGES
+  LOOP F16->F01 CHANGES
+  COLOR optimizado/cerrado = PASS
+
+BALANCE HALITO1:
+  payload original : 12340 B
+  payload final    :  7300 B
+  ahorro payload   :  5040 B
+  decoder residente:    41 B
+  ahorro neto      :  4999 B = 4.88 KiB (~40.5%)
+
+HALITO2:
+  Resource02 A-D cargan fresco desde disco.
+  Arquitectura/layout sincronizados desde HALITO1 final.
+  Fresh F01:
+    SCREEN RLE -> decoder residente $2F70 -> $0400
+    COLOR  RLE -> decoder fresh -> $D800
+  SID2 + timing + sprites + loop = PASS
+
+CONTRATO NUEVO:
+  Fresh load NO implica datos RAW.
+  El entry visual debe reconstruir Frame01 respetando sus codecs reales.
+
+PROXIMO:
+  Aplicar este contrato a la TOOL normalizadora para evitar optimizacion
+  manual Frame por Frame en futuras animaciones.
