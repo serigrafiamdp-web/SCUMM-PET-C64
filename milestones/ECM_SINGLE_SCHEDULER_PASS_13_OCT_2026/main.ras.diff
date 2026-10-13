@@ -1,0 +1,26 @@
+TEST 11 - cambio de orquestación respecto al flujo 3+3
+
+ANTES:
+    lda #$03
+    sta $4005
+    lda $3714
+    jsr $3740
+
+    ; ... segunda fase ...
+
+    lda #$03
+    sta $4005
+    lda $3714
+    jsr $3740
+
+AHORA:
+    lda #$06
+    sta $4005
+    lda $3714
+    jsr $3740
+
+    ; HOLD diagnóstico después de la sesión continua
+ecm_test11_hold:
+    jmp ecm_test11_hold
+
+No se cambió el decoder, el formato ECM, el charset, los BG ni los payloads de frame para demostrar este hallazgo.
