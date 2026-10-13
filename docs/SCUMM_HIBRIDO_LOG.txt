@@ -281,3 +281,28 @@ SIGUIENTE FASE:
 Formalizar estos contratos en la TOOL LVLLVL normalizadora y en el export
 para que futuras animaciones entren ya comprimidas/optimizadas sin repetir
 la bateria manual de tests.
+
+
+======================================================================
+13/10/2026 - TOOL V0.51 ENGINE-COMPAT - PASS
+======================================================================
+BASE FUNCIONAL:
+- TEST_FRESH_DISPATCHER_01_HEADER_RLE_DYNAMIC_POINTER(1).zip = PASS.
+
+EXPORT V0.51:
+- Fresh F1 SCREEN RLE = 57 B.
+- Fresh F1 COLOR RLE = 31 B.
+- Engine RLE usa pares [count,value] + terminador $00.
+- Engine CHANGES usa pares [offset,value] + terminador $00.
+- COLOR HALITO canonicalizado según contrato runtime validado.
+- Los 16 contenedores reconstruidos desde la Tool coinciden byte por byte con la base PASS.
+- Resource01 A-D de la base PASS ya eran byte por byte idénticos a los Resource02 generados por la Tool.
+
+RUNTIME:
+- TEST_V051_RUNTIME_01_TOOL_EXPORT_RESOURCE02.zip = PASS.
+- Resource02 A-D generado íntegramente desde Tool V0.51.
+- main.ras / dispatcher / scheduler / SID / timing / sprites: sin cambios.
+
+PROMOCION:
+- LVLLVL_SCUMM_WEB_TOOL_V0_51.html promovida a oficial en tools/lvllvl-normalizer/index.html.
+- V0.40 permanece archivada como baseline histórica.
