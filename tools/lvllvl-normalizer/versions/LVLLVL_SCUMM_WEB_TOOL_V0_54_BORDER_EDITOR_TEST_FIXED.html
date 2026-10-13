@@ -385,7 +385,7 @@ async function analyze(file){
   const rows=parseFrameTable(textOf(frameTable));
   if(!rows.length)throw new Error('frameTable.asm existe pero no pude detectar frames.');
   for(const r of rows)r.border=globalBorder;
-  const warnings=[], errors=[];warnings.push('BORDER default: 
+  const warnings=[], errors=[];warnings.push('BORDER default: '+String.fromCharCode(36)+globalBorder.toString(16).toUpperCase().padStart(2,'0')+' ('+borderName(globalBorder)+') '+(mainF?'desde main.asm / D020':'fallback')+'. Editable por frame.');
   if(rows.length>16)errors.push(`Se detectaron ${rows.length} frames. ANIMATION admite máximo 16.`);
   const contiguous=rows.every((r,i)=>r.index===i);if(!contiguous)errors.push('Los índices de frame no son consecutivos desde 0.');
   const charset=parseAsmBytes(textOf(charsetF));
@@ -434,7 +434,7 @@ function fmt(n){return new Intl.NumberFormat('es-AR').format(n)}
 function render(a){
   currentAnalysis=a;$('#results').classList.remove('hidden');
   const sv=$('#statusValue');sv.textContent=a.status;sv.className='v '+(a.status==='PASS'?'status-ok':a.status==='PASS_WITH_WARNINGS'?'status-warn':'status-bad');
-  $('#typeValue').textContent=a.type;$('#framesValue').textContent=a.frameCount;$('#charsetValue').textContent=`${a.charsetBytes} B`;const bsl=$('#borderSourceLabel');if(bsl)bsl.textContent='Default 
+  $('#typeValue').textContent=a.type;$('#framesValue').textContent=a.frameCount;$('#charsetValue').textContent=`${a.charsetBytes} B`;const bsl=$('#borderSourceLabel');if(bsl)bsl.textContent='Default '+String.fromCharCode(36)+(a.globalBorder??0).toString(16).toUpperCase().padStart(2,'0')+' · '+borderName(a.globalBorder??0);
   const msg=$('#messages');msg.innerHTML='';if(!a.errors.length)msg.insertAdjacentHTML('beforeend','<div class="okbox">Reconstrucción de screen/color: PASS</div>');for(const e of a.errors)msg.insertAdjacentHTML('beforeend',`<div class="errbox">${escapeHtml(e)}</div>`);for(const w of a.warnings)msg.insertAdjacentHTML('beforeend',`<div class="warnbox">${escapeHtml(w)}</div>`);
   $('#sizeStats').innerHTML=`<tr><th>Map data LVLLVL</th><td>${fmt(a.mapSourceBytes)} B</td></tr><tr><th>Color data LVLLVL</th><td>${fmt(a.colorSourceBytes)} B</td></tr><tr><th>Charset</th><td>${fmt(a.charsetBytes)} B</td></tr><tr><th>Total source gráfico</th><td>${fmt(a.sourceTotal)} B</td></tr><tr><th>Canónico RAW equivalente</th><td>${fmt(a.rawCanonical)} B</td></tr><tr><th>Reducción source vs RAW</th><td>${(a.compressionSaving*100).toFixed(1)}%</td></tr>`;
   const tb=$('#framesTable');tb.innerHTML='';for(const f of a.frames){tb.insertAdjacentHTML('beforeend',`<tr><td>${f.index+1}</td><td><span class="pill ${typeName(f.mapType).toLowerCase()}">${typeName(f.mapType)}</span></td><td>${f.mapBytes}</td><td><span class="pill ${typeName(f.colorType).toLowerCase()}">${typeName(f.colorType)}</span></td><td>${f.colorBytes}</td><td>${f.delay}</td><td>${f.bg.map(x=>x.toString(16).toUpperCase()).join('/')}</td><td>${(f.border??a.globalBorder??0).toString(16).toUpperCase().padStart(2,'0')}</td></tr>`)}
