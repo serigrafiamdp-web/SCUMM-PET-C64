@@ -1,0 +1,44 @@
+--- BASE_PASS/main.ras
++++ TEST_ECM_RUNTIME_01/main.ras
+@@ -42,6 +42,8 @@
+ 
+     // Active descriptors: Resource 01 at $3470 and Resource 02 at $3480.
+     // PODA 13 + 07Z: $3490-$34A0 is free/reusable; Resource 03 descriptor and unused V3 terminator removed.
++    // ECM RUNTIME 01: Resource02 FLT page table F2-F16 + loop, 16 bytes at $3490-$349F.
++    resource02_ecm_page_table : incbin("assets/resource02_ecm_page_table.bin", $3490);
+     mm_resource_descriptors_v3 : incbin("assets/mm_resource_descriptors_v3_exec.bin", $3470);
+@@ -375,12 +377,15 @@
+-        ; HALITO2 DUPLICATE 02:
+-        ; Resource02 uses the exact final HALITO1 AUTO/MIX physical layout.
+-        lda #$7f
+-        sta $4053
+-        lda #$52
+-        sta $4054
++        ; ECM RUNTIME 01:
++        ; Patch F2-F16 + loop pages from resident table $3490-$349F.
++        ; F1 stays fixed at $4400 for PrepareFreshAnimationVisual().
++        ldx #$0f
++ecm_r2_page_patch:
++        lda $3490,x
++        sta $4047,x
++        dex
++        bpl ecm_r2_page_patch
+@@ -459,6 +464,17 @@
+         lda $d011
+         and #$ef
+         sta $d011
++
++        ; ECM RUNTIME 01: Resource02 charset is staged inside the existing
++        ; animation bank at $9E00-$9FFF. Copy only 512 bytes (64 glyphs).
++        ldx #$00
++habc_ecm_charset_copy:
++        lda $9e00,x
++        sta $3800,x
++        lda $9f00,x
++        sta $3900,x
++        inx
++        bne habc_ecm_charset_copy
+@@ -557,7 +573,7 @@
+-        ora #$10
++        ora #$50                 ; DEN + ECM (bit 6)
+         sta $d011
