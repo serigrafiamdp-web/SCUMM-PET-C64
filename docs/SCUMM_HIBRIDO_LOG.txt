@@ -306,3 +306,34 @@ RUNTIME:
 PROMOCION:
 - LVLLVL_SCUMM_WEB_TOOL_V0_51.html promovida a oficial en tools/lvllvl-normalizer/index.html.
 - V0.40 permanece archivada como baseline histórica.
+
+======================================================================
+13/10/2026 - BORDER V0.54 + RUNTIME D020 - PASS CONFIRMADO
+======================================================================
+TEST:
+- TEST_BORDER_RUNTIME_02_FLT_V054_BORDER_0B_04.zip
+- SHA256: d7281494052cf9c7a0a9f1df1cb665a88ab60b55d5b3fb8be9446bfceca10c8f
+
+RESULTADO:
+- PASS confirmado por usuario.
+- FLT alterna BORDER por frame: F01=$0B, F02=$04 ... F16=$04.
+- HALITO1 / INTRO / PORTADA permanecen sin cambios visuales.
+- Circuito validado completo:
+  Tool V0.54 -> framepack byte 7 -> runtime header byte 3 -> VIC-II $D020.
+
+TOOL:
+- LVLLVL_SCUMM_WEB_TOOL_V0_54_BORDER_EDITOR_PASS.html
+- Default BORDER detectado desde main.asm / $D020.
+- Override de BORDER editable frame por frame.
+- Preview de BORDER.
+- Export final por frame en framepack byte 7.
+
+MOTOR:
+- Runtime header byte 3 = BORDER.
+- scheduler_helper_reloc.bin escribe ese byte a $D020.
+- Fresh F1 usa $4403 para $D020.
+- Integración general y retrocompatible: recursos antiguos con byte3=$00 conservan borde negro.
+
+ESTADO:
+- BORDER por frame queda aprobado como parte del contrato de integración.
+- Mantener animación continua dentro de una sola sesión del scheduler.
