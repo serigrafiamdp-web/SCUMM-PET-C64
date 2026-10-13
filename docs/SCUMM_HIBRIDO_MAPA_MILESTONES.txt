@@ -491,3 +491,18 @@ PROXIMO:
 - Resource01 visual: equivalencia byte a byte con salida Tool confirmada.
 - Pipeline visual HALITO Tool -> Resource01/02 -> motor queda validado para esta animación.
 - Próximo paso recomendado: probar una animación LVLLVL distinta para demostrar generalidad, sin cambiar el motor.
+
+======================================================================
+MILESTONE - BORDER V0.54 / D020 RUNTIME PASS - 13 OCT 2026
+======================================================================
+VALIDADO:
+- Tool V0.54 BORDER EDITOR: PASS.
+- Runtime BORDER por frame: PASS.
+- Ruta: framepack[entry+7] -> runtime header byte3 -> $D020.
+- Test visual: $0B / $04 alternado por frame.
+- HALITO1 / INTRO / PORTADA sin regresiones.
+
+PUNTO DE RETORNO RECOMENDADO:
+- branch: milestone/border-v054-runtime-pass-13-oct-2026
+- runtime source base: test/runtime-border-v053b
+- tool snapshot: LVLLVL_SCUMM_WEB_TOOL_V0_54_BORDER_EDITOR_PASS.html
