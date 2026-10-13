@@ -1,0 +1,21 @@
+{
+  "milestone": "BORDER_V054_RUNTIME_PASS_13_OCT_2026",
+  "date": "2026-10-13",
+  "status": "PASS",
+  "runtime_branch": "test/runtime-border-v053b",
+  "tool_branch": "test/tool-v0.53-border",
+  "runtime_test_zip": "TEST_BORDER_RUNTIME_02_FLT_V054_BORDER_0B_04.zip",
+  "runtime_test_zip_sha256": "d7281494052cf9c7a0a9f1df1cb665a88ab60b55d5b3fb8be9446bfceca10c8f",
+  "engine": {
+    "main_ras_blob_sha": "1bd9cf2c684eb7b4a3db3b803ac59c94cc1822b5",
+    "scheduler_helper_reloc_blob_sha": "b22f227682879d8b2cd9c2163957cfe0f4a215f9",
+    "border_contract": "runtime header byte 3 -> VIC-II $D020"
+  },
+  "tool": {
+    "version": "0.54",
+    "pass_file": "tools/lvllvl-normalizer/versions/LVLLVL_SCUMM_WEB_TOOL_V0_54_BORDER_EDITOR_PASS.html",
+    "source_clean_blob_sha": "e47442dcb449fcc0aab6e7a30e05f67d9870fa2b",
+    "border_contract": "default from main.asm D020; per-frame override -> framepack byte 7"
+  },
+  "visual_validation": "F01 $0B, F02 $04 alternating through F16; prior scenes unchanged"
+}
