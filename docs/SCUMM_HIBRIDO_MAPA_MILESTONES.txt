@@ -480,3 +480,14 @@ CONTRATO NUEVO:
 PROXIMO:
   Aplicar este contrato a la TOOL normalizadora para evitar optimizacion
   manual Frame por Frame en futuras animaciones.
+
+
+=== MILESTONE 13/10/2026 - TOOL V0.51 PASS ===
+- Tool oficial: LVLLVL SCUMM Normalizer V0.51.
+- Fresh Frame 1 genérica: FULL o RLE, autocontenida.
+- RLE runtime: [count,value] + $00.
+- CHANGES runtime: [offset,value] + $00.
+- Resource02 generado por Tool: PASS en runtime.
+- Resource01 visual: equivalencia byte a byte con salida Tool confirmada.
+- Pipeline visual HALITO Tool -> Resource01/02 -> motor queda validado para esta animación.
+- Próximo paso recomendado: probar una animación LVLLVL distinta para demostrar generalidad, sin cambiar el motor.
