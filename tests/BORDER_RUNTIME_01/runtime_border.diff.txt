@@ -1,0 +1,16 @@
+Runtime border integration:
+
+main.ras:
+- habc_color_rle_done:
+    old: LDA #$00 / STA $D020
+    new: LDA $4403 / STA $D020
+
+assets/scheduler_helper_reloc.bin:
+- helper reads runtime frame header byte 3 at Y=$03.
+- old bytes after LDA ($F7),Y: EA EA EA
+- new bytes: 8D 20 D0  ; STA $D020
+
+Resource integration:
+- SCUMM framepack byte 7 copied to runtime frame header byte 3.
+- Loop F16->F1 header also carries Frame1 BORDER.
+- No header expansion, no pointer changes.
