@@ -1,0 +1,20 @@
+--- TEST_ECM_RUNTIME_01/main.ras
++++ TEST_ECM_RUNTIME_02/main.ras
+@@
+-        ; Three loops completed: show centered 8-frame Sprite Engine, still STATIC in X.
+-        ; $A300 is the approved show/init entry; animation tick remains active.
+-        jsr $a300
++        ; ECM SPRITE ISOLATION TEST 02:
++        ; Resource02 sprite SHOW/INIT intentionally disabled.
++        ; Keep all loop phases and animation timing unchanged.
++        ; jsr $a300
+@@
+-        lda #$01
+-        sta $a6f0
+-        sta $a6f1
++        ; ECM SPRITE ISOLATION TEST 02:
++        ; Preserve fast cadence transition, but do NOT enable Resource02 movement.
++        ; lda #$01
++        ; sta $a6f0
++        ; sta $a6f1
+         cli
