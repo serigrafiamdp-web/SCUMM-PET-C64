@@ -337,3 +337,56 @@ MOTOR:
 ESTADO:
 - BORDER por frame queda aprobado como parte del contrato de integración.
 - Mantener animación continua dentro de una sola sesión del scheduler.
+
+
+======================================================================
+13/10/2026 - ANIMATED CHARS RUNTIME TEST 02 - V0.56 - PASS
+======================================================================
+TEST:
+- TEST_ANIMATED_CHARS_RUNTIME_02_4CHARS_V056_ECM.zip
+- SHA256: 6c37bd12ab8f626daf06f042ea49f5cd63a1662348205c3c18b4be2c8f1462d7
+- Library: /TEST_ANIMATED_CHARS_RUNTIME_02_4CHARS_V056_ECM.zip
+
+SOURCE EXPORT:
+- flt_animated_4_chars_SCUMM_ANIMATION_V2E.zip
+- SHA256: adbaeaf0dc7b7488d0770f1a6afe7e6cd9b731997d2f20b87c86a49bb2898f1b
+- Tool V0.56.
+
+RESULTADO:
+- PASS confirmado en runtime por usuario.
+- Se animan correctamente SOLO los 4 caracteres usados en LVLLVL.
+- No aparecen movimientos espurios de otros caracteres.
+- INTRO / HALITO / PORTADA / SID / BORDER sin regresiones reportadas.
+
+TABLA ACH1 VALIDADA:
+- $0068 -> glyph fisico $0D -> RIGHT -> tick 6
+- $0058 -> glyph fisico $0B -> LEFT  -> tick 6
+- $0028 -> glyph fisico $05 -> LEFT  -> tick 6
+- $0030 -> glyph fisico $06 -> RIGHT -> tick 6
+
+CONTRATO ECM / ANIMATED CHARS VALIDADO:
+- LVLLVL puede editar en Text Art con indice logico 0..255.
+- Al exportar ECM, LVLLVL reorganiza/compacta el arte al charset fisico de 64 glyphs.
+- charset.bin de 512 B es la verdad fisica del export.
+- Los screen codes conservan 8 bits: bits 0-5 = glyph fisico; bits 6-7 = BG0..BG3.
+- animatedCharsTable.asm se genera DESPUES del remapeo de LVLLVL.
+- charOffset de Animated Chars se usa DIRECTAMENTE como offset fisico dentro del
+  charset exportado.
+- NO aplicar '& $3F' al charOffset de Animated Chars.
+- NO deduplicar por bitmap.
+- Cada entrada conserva ticks y contador independientes.
+
+AISLAMIENTO DEL TEST:
+- main.ras IDENTICO al TEST01.
+- core ACH1 IDENTICO al TEST01.
+- IRQ gate IDENTICO al TEST01.
+- framepack.bin y charset.bin IDENTICOS al TEST01.
+- Unica variable funcional TEST01 -> TEST02: tabla Animated Chars 7 -> 4 entradas.
+
+TOOL:
+- LVLLVL_SCUMM_WEB_TOOL_V0_56_ECM_PHYSICAL_ANIM_OFFSETS_PASS.html
+- V0.56 queda validada para Animated Chars procedurales 0..4 en ECM.
+- Tipo 5 FRAMES / animatedCharsData continua PENDIENTE de contrato propio.
+
+PUNTO DE RETORNO:
+- branch: milestone/animated-chars-v056-runtime-pass-13-oct-2026
