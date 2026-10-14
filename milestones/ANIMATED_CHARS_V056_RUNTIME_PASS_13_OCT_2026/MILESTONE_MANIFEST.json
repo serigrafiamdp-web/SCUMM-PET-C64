@@ -1,0 +1,55 @@
+{
+  "milestone": "ANIMATED_CHARS_V056_RUNTIME_PASS_13_OCT_2026",
+  "date": "2026-10-13",
+  "status": "PASS",
+  "branch": "milestone/animated-chars-v056-runtime-pass-13-oct-2026",
+  "runtime_test": {
+    "file": "TEST_ANIMATED_CHARS_RUNTIME_02_4CHARS_V056_ECM.zip",
+    "sha256": "6c37bd12ab8f626daf06f042ea49f5cd63a1662348205c3c18b4be2c8f1462d7",
+    "library_path": "/TEST_ANIMATED_CHARS_RUNTIME_02_4CHARS_V056_ECM.zip"
+  },
+  "tool_export": {
+    "file": "flt_animated_4_chars_SCUMM_ANIMATION_V2E.zip",
+    "sha256": "adbaeaf0dc7b7488d0770f1a6afe7e6cd9b731997d2f20b87c86a49bb2898f1b",
+    "tool_version": "0.56"
+  },
+  "tool_pass_snapshot": "tools/lvllvl-normalizer/versions/LVLLVL_SCUMM_WEB_TOOL_V0_56_ECM_PHYSICAL_ANIM_OFFSETS_PASS.html",
+  "contract": {
+    "video_mode": "ECM",
+    "charset_bytes": 512,
+    "screen_code_glyph_rule": "screenCode & $3F",
+    "animated_char_offset_rule": "Use LVLLVL charOffset directly as physical byte offset in exported charset. Never apply & $3F to animated char offsets.",
+    "bitmap_deduplication": false,
+    "ticks": "independent per Animated Char entry"
+  },
+  "validated_entries": [
+    {
+      "offset": "$0068",
+      "glyph": "$0D",
+      "type": "RIGHT",
+      "ticks": 6
+    },
+    {
+      "offset": "$0058",
+      "glyph": "$0B",
+      "type": "LEFT",
+      "ticks": 6
+    },
+    {
+      "offset": "$0028",
+      "glyph": "$05",
+      "type": "LEFT",
+      "ticks": 6
+    },
+    {
+      "offset": "$0030",
+      "glyph": "$06",
+      "type": "RIGHT",
+      "ticks": 6
+    }
+  ],
+  "isolation": "TEST01 -> TEST02 changed only the Animated Chars table from 7 to 4 entries; engine/core/IRQ/framepack/charset remained unchanged.",
+  "pending": [
+    "Animated Char type 5 FRAMES / animatedCharsData"
+  ]
+}
