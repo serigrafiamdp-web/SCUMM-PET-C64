@@ -1,0 +1,26 @@
+{
+  "master": "MASTER_13_OCT_2026_ECM_BORDER_ANIMATED_CHARS_V056",
+  "date": "2026-10-13",
+  "status": "PASS",
+  "engine_snapshot": {
+    "file": "MASTER_SCUMM_PET_13_OCT_2026_ECM_BORDER_ANIMATED_CHARS_V056_PASS.zip",
+    "sha256": "6c37bd12ab8f626daf06f042ea49f5cd63a1662348205c3c18b4be2c8f1462d7",
+    "library_path": "/MASTER_SCUMM_PET_13_OCT_2026_ECM_BORDER_ANIMATED_CHARS_V056_PASS.zip"
+  },
+  "tool": {
+    "version": "0.56",
+    "official_path": "tools/lvllvl-normalizer/index.html",
+    "pass_snapshot": "tools/lvllvl-normalizer/versions/LVLLVL_SCUMM_WEB_TOOL_V0_56_ECM_PHYSICAL_ANIM_OFFSETS_PASS.html"
+  },
+  "validated": [
+    "ECM",
+    "single_scheduler_session",
+    "border_per_frame",
+    "animated_chars_procedural_0_4",
+    "independent_ticks"
+  ],
+  "pending": [
+    "Animated Char type 5 FRAMES / animatedCharsData"
+  ],
+  "source_milestone": "milestone/animated-chars-v056-runtime-pass-13-oct-2026"
+}
