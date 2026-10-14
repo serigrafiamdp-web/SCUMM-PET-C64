@@ -285,7 +285,7 @@ function applyAnalysisColorPolicy(a,policy){
 function buildScummV2(frames,charset,blockingErrors,animatedCount){
   const errors=[],packed=[];let prevMap=null,prevColor=null,totalPayload=0;
   if(blockingErrors.length)errors.push('El importador LVLLVL contiene errores.');
-  if(animatedCount)errors.push('Animated Chars todavía no forman parte de SCUMM_ANIMATION_V2.');
+  // V0.55: procedural Animated Chars 0-4 are part of the exported resource via animated_chars.bin.
   if(frames.length<2||frames.length>16)errors.push('ANIMATION V2 requiere 2..16 frames.');
   if(charset.length!==2048&&charset.length!==512)errors.push('Charset debe medir 2048 bytes (HIRES) o 512 bytes (ECM).');
   for(let i=0;i<frames.length;i++){
