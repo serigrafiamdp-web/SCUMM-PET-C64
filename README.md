@@ -51,25 +51,37 @@ INTRO CARGA (4F LEMMINGS)
 
 ## Estado estable actual
 
-**MASTER 09/10/2026 = PASS**
+**MASTER 13/10/2026 = PASS**
 
-HALITO 1 AUTO/MIX + HALITO 2 fresh load comprimido.
+ECM + BORDER por frame + Animated Chars procedurales + Tool V0.56.
 
-Snapshot exacto:
+Snapshot exacto del motor:
 
-`MASTER_SCUMM_PET_09_OCT_2026_HALITO1_AUTOMIX_HALITO2_FRESH_PASS.zip`
+`MASTER_SCUMM_PET_13_OCT_2026_ECM_BORDER_ANIMATED_CHARS_V056_PASS.zip`
 
 SHA-256:
 
-`2a84c3298f8053934db8f4ece8e1afaf48fb85a49a2bdef0768d4b818a1a2ed2`
+`6c37bd12ab8f626daf06f042ea49f5cd63a1662348205c3c18b4be2c8f1462d7`
 
 Estado validado:
 
-- HALITO 1: F01 RLE, F02 CHANGES, F03-F13 BITMAP_DELTA, F14-F15 RLE, F16 CHANGES.
-- COLOR: cadena optimizada y cerrada.
-- Ahorro neto HALITO 1: 4999 B = 4.88 KiB (~40.5%).
-- HALITO 2: Resource02 carga fresco desde disco y reconstruye F01 desde SCREEN RLE + COLOR RLE.
-- SID2, timing, sprites y loop: PASS.
+- Conserva los contratos anteriores HALITO1 AUTO/MIX + HALITO2 fresh load.
+- Resource02 ECM: charset físico 512 B / 64 glyphs, screen codes de 8 bits.
+- Animación continua dentro de una sola sesión del scheduler.
+- BORDER por frame: framepack byte 7 -> runtime header byte 3 -> $D020.
+- Animated Chars procedurales 0..4: PASS.
+- Cada Animated Char conserva tick/counter independiente.
+- LVLLVL remapea/compacta Text Art 0..255 al exportar ECM.
+- `animatedCharsTable.asm charOffset` se usa como offset físico directo del charset exportado.
+- NO aplicar `& $3F` a offsets de Animated Chars.
+- TEST final de 4 Animated Chars: sólo se mueven los 4 caracteres seleccionados.
+- INTRO / HALITO / PORTADA / SID / BORDER sin regresiones reportadas.
+
+Release GitHub:
+
+`releases/MASTER_13_OCT_2026_ECM_BORDER_ANIMATED_CHARS_V056/`
+
+El ZIP exacto está preservado en Library raíz con el checksum anterior.
 
 ## Reglas del repositorio
 
@@ -82,7 +94,7 @@ Estado validado:
 
 - `engine/` — árbol materializado histórico; el MASTER vigente se registra en `releases/` y en la documentación viva.
 - `docs/` — mapa de arquitectura y log vivo del proyecto.
-- `releases/MASTER_09_OCT_2026/` — manifiesto del MASTER PASS vigente + checksum.
+- `releases/MASTER_13_OCT_2026_ECM_BORDER_ANIMATED_CHARS_V056/` — manifiesto del MASTER PASS vigente + checksum.
 - `tools/lvllvl-normalizer/` — TOOL normalizadora web oficial del proyecto.
 - `.github/workflows/` — verificación y materialización del MASTER.
 
@@ -92,19 +104,31 @@ Ruta oficial actual:
 
 `tools/lvllvl-normalizer/index.html`
 
-Versión congelada validada:
+Versión oficial promovida:
 
-`tools/lvllvl-normalizer/versions/LVLLVL_SCUMM_WEB_TOOL_V0_40.html`
+**V0.56 ECM PHYSICAL ANIM OFFSETS PASS**
+
+Snapshot congelado:
+
+`tools/lvllvl-normalizer/versions/LVLLVL_SCUMM_WEB_TOOL_V0_56_ECM_PHYSICAL_ANIM_OFFSETS_PASS.html`
 
 Perfil vigente:
 
-`ANIMATION_16F_V2E`
+`ANIMATION_16F_ECM_V1 / ANIMATION_16F_V2E`
+
+Contratos promovidos en la Tool:
+
+- Fresh F1 autocontenida FULL/RLE.
+- RLE / CHANGES / BITMAP_DELTA compatibles con el motor.
+- BORDER editable por frame.
+- ECM con 64 glyphs físicos y BG0-BG3.
+- Animated Chars ACH1 con tick independiente por entrada.
+- Offsets Animated Char físicos preservados directamente desde LVLLVL.
+- Sin deduplicación por bitmap.
 
 ## Próximo paso documentado
 
-Integrar en la TOOL normalizadora el contrato aprendido con HALITO 1:
+- Validar Animated Char tipo 5 FRAMES / `animatedCharsData` en un test aislado.
+- Mantener V0.56 y este MASTER sin cambios mientras se prueba esa extensión.
+- Cualquier función nueva entra primero como TEST PASS/FAIL antes de promoverse.
 
-- optimización de COLOR sobre glyphs realmente vacíos;
-- generación por Frame de RLE / BITMAP_DELTA / CHANGES;
-- selección AUTO del payload más chico;
-- export compatible con fresh load, respetando el codec real de Frame01.
