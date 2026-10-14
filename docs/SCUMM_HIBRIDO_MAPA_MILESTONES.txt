@@ -506,3 +506,52 @@ PUNTO DE RETORNO RECOMENDADO:
 - branch: milestone/border-v054-runtime-pass-13-oct-2026
 - runtime source base: test/runtime-border-v053b
 - tool snapshot: LVLLVL_SCUMM_WEB_TOOL_V0_54_BORDER_EDITOR_PASS.html
+
+
+======================================================================
+MILESTONE - ANIMATED CHARS V0.56 / ECM PHYSICAL OFFSETS - PASS
+13 OCT 2026
+======================================================================
+
+LVLLVL TEXT ART
+  indice logico 0..255
+          |
+          | export C64 ECM
+          v
+LVLLVL REMAP / COMPACT
+  charset fisico = 64 glyphs / 512 B
+          |
+          +--> screen code bits 0..5 = glyph
+          |                bits 6..7 = BG0..BG3
+          |
+          +--> animatedCharsTable charOffset
+               = OFFSET FISICO DIRECTO EN CHARSET
+               = NO aplicar & $3F
+
+RUNTIME PASS:
+  $3800-$39FF  charset ECM activo
+  $9000-$90FB  core ACH1
+  $9200-$922B  tabla ACH1 de 4 chars
+  $2F89-$2F9B  IRQ gate
+
+TABLA VALIDADA:
+  $0068 -> glyph $0D RIGHT tick 6
+  $0058 -> glyph $0B LEFT  tick 6
+  $0028 -> glyph $05 LEFT  tick 6
+  $0030 -> glyph $06 RIGHT tick 6
+
+RESULTADO:
+- SOLO esos 4 chars se animan.
+- Ningun otro char se mueve.
+- Tick independiente por entrada queda parte del contrato.
+- Identidad = slot fisico exportado, NO bitmap.
+- No deduplicar glyphs visualmente iguales.
+
+TOOL PASS:
+  LVLLVL_SCUMM_WEB_TOOL_V0_56_ECM_PHYSICAL_ANIM_OFFSETS_PASS.html
+
+PUNTO DE RETORNO:
+  milestone/animated-chars-v056-runtime-pass-13-oct-2026
+
+PENDIENTE:
+- Animated Char tipo 5 FRAMES / animatedCharsData.
